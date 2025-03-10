@@ -1,11 +1,35 @@
 {
     "Experten": {
-        "003": {
-            "multi_turn_quality": {
+        "004": {
+            "multi_turn_quality_pairwise": {
                 "votes": [
-                    2
+                    "A"
                 ],
-                "vote_count": 1
+                "swap_history": [
+                    true
+                ]
+            }
+        }
+    },
+    "Crowd": {
+        "004": {
+            "multi_turn_quality_pairwise": {
+                "votes": [
+                    "B"
+                ],
+                "swap_history": [
+                    false
+                ]
+            }
+        },
+        "002": {
+            "quality_pairwise": {
+                "votes": [
+                    "B"
+                ],
+                "swap_history": [
+                    true
+                ]
             }
         },
         "001": {
@@ -13,25 +37,20 @@
                 "votes": [
                     "Nein"
                 ],
-                "vote_count": 1
+                "swap_history": [
+                    null
+                ]
             }
         },
         "005": {
             "faithfulness": {
                 "votes": [
-                    "Nein"
+                    "Ja"
                 ],
-                "vote_count": 1
-            }
-        },
-        "004": {
-            "multi_turn_quality_pairwise": {
-                "votes": [
-                    "B"
-                ],
-                "vote_count": 1
+                "swap_history": [
+                    null
+                ]
             }
         }
-    },
-    "Crowd": {}
+    }
 }
