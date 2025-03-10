@@ -1,0 +1,37 @@
+{
+    "Experten": {
+        "003": {
+            "multi_turn_quality": {
+                "votes": [
+                    2
+                ],
+                "vote_count": 1
+            }
+        },
+        "001": {
+            "faithfulness": {
+                "votes": [
+                    "Nein"
+                ],
+                "vote_count": 1
+            }
+        },
+        "005": {
+            "faithfulness": {
+                "votes": [
+                    "Nein"
+                ],
+                "vote_count": 1
+            }
+        },
+        "004": {
+            "multi_turn_quality_pairwise": {
+                "votes": [
+                    "B"
+                ],
+                "vote_count": 1
+            }
+        }
+    },
+    "Crowd": {}
+}

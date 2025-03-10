@@ -1,0 +1,89 @@
+{
+  "rubrics": {
+    "Allgemeine Frage": ["faithfulness", "quality"],
+    "Allgemeine Frage Pairwise": ["quality_pairwise"],
+    "Dialog": ["multi_turn_quality"],
+    "Dialog Pairwise": ["multi_turn_quality_pairwise"]
+  },
+  "examples": [
+    {
+      "id": "001",
+      "rubric": "Allgemeine Frage",
+      "user_input": "Was ist der Sinn des Lebens?",
+      "response": "42",
+      "reference": "Die Antwort lautet 42.",
+      "reference_contexts": [
+        "Dokument_A",
+        "Dokument_B"
+      ],
+      "retrieved_contexts": [
+        "Dokument_X",
+        "Dokument_Y"
+      ]
+    },
+    {
+      "id": "005",
+      "rubric": "Allgemeine Frage",
+      "user_input": "Warum ist die Banane krumm?",
+      "response": "Da sie niemand geradebog",
+      "reference": "Wegen dem Schwerkraftfeld der Erde.",
+      "reference_contexts": [
+        "Dokument_A",
+        "Dokument_B"
+      ],
+      "retrieved_contexts": [
+        "Dokument_X",
+        "Dokument_Y"
+      ]
+    },
+    {
+      "id": "002",
+      "rubric": "Allgemeine Frage Pairwise",
+      "responses": [
+        "Die Antwort lautet 42.",
+        "42 ist die Antwort auf die Frage nach dem Leben, dem Universum und dem ganzen Rest."
+      ],
+      "reference": "Eine detaillierte Erklärung der Quantenphysik.",
+      "reference_contexts": [
+        "Dokument_C"
+      ],
+      "retrieved_contexts": [
+        "Dokument_Z"
+      ]
+    },
+    {
+      "id": "003",
+      "rubric": "Dialog",
+      "dialog": [
+          ["user", "Hallo, wie ist das Wetter heute?"],
+          ["assistant", "Das Wetter ist sonnig und warm."],
+          ["user", "Kannst du mir ein passendes Outfit empfehlen?"],
+          ["assistant", "Gerne, ich würde etwas Leichtes und Helles vorschlagen."]
+        ],
+      "reference": "Idealerweise sollte die Konversation flüssig verlaufen und alle Fragen zufriedenstellend beantworten.",
+      "reference_contexts": ["Dokument_Wetter", "Dokument_Mode"],
+      "retrieved_contexts": ["Dokument_X", "Dokument_Y"]
+    },
+    {
+      "id": "004",
+      "rubric": "Dialog Pairwise",
+      "dialogs": [
+        [
+          ["user", "Hallo, wie ist das Wetter heute?"],
+          ["assistant", "Das Wetter ist sonnig und warm."],
+          ["user", "Kannst du mir ein passendes Outfit empfehlen?"],
+          ["assistant", "Gerne, ich würde etwas Leichtes und Helles vorschlagen."]
+        ],
+        [
+          ["user", "Hallo, wie ist das Wetter heute?"],
+          ["assistant", "Es ist ein wunderschöner Tag mit klarem Himmel und angenehmen Temperaturen."],
+          ["user", "Kannst du mir ein passendes Outfit empfehlen?"],
+          ["assistant", "Ich empfehle leichte Sommerkleidung, zum Beispiel ein luftiges Hemd und Shorts."]
+        ]
+      ],
+      "reference": "Idealerweise sollte die Konversation flüssig verlaufen und alle Fragen zufriedenstellend beantworten.",
+      "reference_contexts": ["Dokument_Wetter", "Dokument_Mode"],
+      "retrieved_contexts": ["Dokument_X", "Dokument_Y"]
+    }
+  ]
+}
