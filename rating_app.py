@@ -4,20 +4,28 @@ import random
 import os
 import supabase
 from collections import defaultdict
+# --- IMPORTANT: Update prompt_templates.py for pairwise metrics ---
+# Ensure quality_pairwise requires ['query', 'answer_a', 'answer_b']
+# Ensure multi_turn_quality_pairwise requires ['history_a', 'history_b'] (and maybe 'query')
 from prompt_templates import evaluation_templates, general_intro_prompt
 
 DATA_FILE = "ratings_data.json"
-VALIDATION_FILE = "validation_set.json"
-MODE = "supabase"  # supported modes: "local", "supabase"
+VALIDATION_FILE_A = "validationset.json"
+# --- Added second validation file constant ---
+VALIDATION_FILE_B = "validationset-b.json"
+MODE = "local"  # supported modes: "local", "supabase"
 
+# --- Define Pairwise Metrics ---
+PAIRWISE_METRICS = {"quality_pairwise", "multi_turn_quality_pairwise"}
 
 # --- Helper Functions ---
 
 def init_supabase():
+    # ... (no changes needed)
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     if not SUPABASE_URL or not SUPABASE_KEY:
-        raise ValueError("Supabase URL or Key not found in .env")
+        raise ValueError("Supabase URL or Key not found in secrets")
     supabase_client = supabase.create_client(SUPABASE_URL, SUPABASE_KEY)
     return supabase_client
 
@@ -27,320 +35,594 @@ def load_ratings(supabase_client):
 
     if MODE == "supabase":
         try:
-            # Fetch all ratings from Supabase
             response = supabase_client.schema("api").table("ratings").select("*").execute()
             data = response.data
 
             for row in data:
                 rater_type = row["rater_type"]
-                sample_id = row["sample_id"]
+                sample_id = row["sample_id"] # This ID represents the sample or sample pair
                 metric = row["metric"]
                 vote = row["vote"]
-                swap_positions = row["swap_positions"]
+                swap_positions = row.get("swap_positions") # Use .get for safety
 
                 if sample_id not in ratings[rater_type]:
                     ratings[rater_type][sample_id] = {}
                 if metric not in ratings[rater_type][sample_id]:
+                    # Initialize structure for both single and pairwise
                     ratings[rater_type][sample_id][metric] = {"votes": [], "swap_history": []}
+
                 ratings[rater_type][sample_id][metric]["votes"].append(vote)
-                ratings[rater_type][sample_id][metric]["swap_history"].append(swap_positions)
+                # Only append swap_history if it's relevant (pairwise) and exists
+                if metric in PAIRWISE_METRICS and swap_positions is not None:
+                     ratings[rater_type][sample_id][metric]["swap_history"].append(swap_positions)
+                elif metric not in PAIRWISE_METRICS:
+                     # For non-pairwise, append None or a consistent value if needed later
+                     ratings[rater_type][sample_id][metric]["swap_history"].append(None)
+
+
         except Exception as e:
             st.error(f"Error loading ratings from Supabase: {e}")
+            # Fallback or default initialization
+            ratings = {"Experten": {}, "Crowd": {}}
+
     else:  # local mode
         if os.path.exists(DATA_FILE):
             with open(DATA_FILE, "r") as f:
                 try:
                     ratings = json.load(f)
-                    # Recalculate vote counts after loading from file
+                    # Ensure compatibility and recalculate vote counts
                     for group in ratings:
                         for sample_id in ratings[group]:
                             for metric in ratings[group][sample_id]:
+                                # Ensure base structure
+                                if "votes" not in ratings[group][sample_id][metric]:
+                                    ratings[group][sample_id][metric]["votes"] = []
+                                if "swap_history" not in ratings[group][sample_id][metric]:
+                                     ratings[group][sample_id][metric]["swap_history"] = [None] * len(ratings[group][sample_id][metric]["votes"]) # Add placeholders if missing
+
+                                # Ensure swap_history length matches votes length
+                                if len(ratings[group][sample_id][metric]["swap_history"]) != len(ratings[group][sample_id][metric]["votes"]):
+                                     # Attempt to fix - might need better logic depending on cause
+                                     st.warning(f"Inconsistent votes/swap_history length for {sample_id}/{metric}. Resetting swap_history.")
+                                     ratings[group][sample_id][metric]["swap_history"] = [None] * len(ratings[group][sample_id][metric]["votes"])
+
+                                # Add vote_count (temporary for logic, removed on save)
                                 ratings[group][sample_id][metric]["vote_count"] = len(
                                     ratings[group][sample_id][metric]["votes"]
                                 )
                 except json.JSONDecodeError:
-                    st.error("Error loading ratings data. The file may be corrupted.")
+                    st.error("Error loading ratings data. File may be corrupted.")
+                    ratings = {"Experten": {}, "Crowd": {}}
+                except Exception as e:
+                    st.error(f"Error processing local ratings data: {e}")
+                    ratings = {"Experten": {}, "Crowd": {}}
+        else:
+             ratings = {"Experten": {}, "Crowd": {}}
+
+
+    # Ensure base structure exists
+    if "Experten" not in ratings: ratings["Experten"] = {}
+    if "Crowd" not in ratings: ratings["Crowd"] = {}
 
     return ratings
 
 
 def save_ratings(ratings, supabase_client):
+    ratings_copy = json.loads(json.dumps(ratings)) # Deep copy
+
+    # Remove temporary "vote_count"
+    for group in ratings_copy:
+        for sample_id in ratings_copy[group]:
+            for metric in ratings_copy[group][sample_id]:
+                if "vote_count" in ratings_copy[group][sample_id][metric]:
+                    del ratings_copy[group][sample_id][metric]["vote_count"]
+                # Ensure swap_history length matches votes length before saving
+                if len(ratings_copy[group][sample_id][metric].get("swap_history", [])) != len(ratings_copy[group][sample_id][metric].get("votes", [])):
+                     st.error(f"CRITICAL SAVE ERROR: Mismatch votes/swap_history for {sample_id}/{metric}. Data might be corrupted.")
+                     # Decide how to handle: skip saving this entry? Abort?
+                     # For now, let's just log and continue, but this needs attention
+                     continue # Skip this metric to avoid saving inconsistent data
+
+
     if MODE == "supabase":
         try:
-            # Clear all existing data in the table first for a clean update
-            # supabase_client.schema("api").table("ratings").delete().neq("id", -1).execute()
+            # --- Upsert logic is generally better for Supabase ---
+            # Assumes a unique constraint on (rater_type, sample_id, metric, maybe_rater_id?)
+            # If each vote is a unique row, insert is fine, but managing updates is harder.
+            # Let's stick to INSERT for now, assuming each vote is logged.
 
             data_to_insert = []
-            for rater_type, sample_data in ratings.items():
+            for rater_type, sample_data in ratings_copy.items():
                 for sample_id, metric_data in sample_data.items():
                     for metric, vote_data in metric_data.items():
-                        for vote, swap_position in zip(vote_data["votes"], vote_data["swap_history"]):
+                        votes = vote_data.get("votes", [])
+                        swaps = vote_data.get("swap_history", [None] * len(votes)) # Default swaps to None if missing
+
+                        # Ensure lists have same length (should be guaranteed by load/save logic now)
+                        if len(votes) != len(swaps):
+                             st.error(f"Data inconsistency detected before Supabase save for {sample_id}/{metric}. Skipping.")
+                             continue
+
+                        for vote, swap_position in zip(votes, swaps):
                             data_to_insert.append({
                                 "rater_type": rater_type,
-                                "sample_id": sample_id,
+                                "sample_id": sample_id, # Represents sample or pair ID
                                 "metric": metric,
                                 "vote": vote,
-                                "swap_positions": swap_position,
+                                "swap_positions": swap_position if metric in PAIRWISE_METRICS else None,
                             })
-                            
-            # Split data into chunks of 100 for efficient insert (supabase max)
+
+            # Clear existing ratings before inserting new ones?
+            # This depends on whether you want a full overwrite or append.
+            # For simplicity, let's assume append (each vote is a new record).
+            # If overwrite needed:
+            # supabase_client.schema("api").table("ratings").delete().neq("id", -1).execute() # Careful!
+
             chunk_size = 100
             for i in range(0, len(data_to_insert), chunk_size):
                 chunk = data_to_insert[i:i+chunk_size]
                 supabase_client.schema("api").table("ratings").insert(chunk).execute()
-        
+
         except Exception as e:
             st.error(f"Error saving ratings to Supabase: {e}")
-    else:
-        # Remove "vote_count" and recalculate it on loading (this will delete it during save)
-        ratings_copy = json.loads(json.dumps(ratings))  # deep copy
-        for group in ratings_copy:
-            for sample_id in ratings_copy[group]:
-                for metric in ratings_copy[group][sample_id]:
-                    if "vote_count" in ratings_copy[group][sample_id][metric]:
-                        del ratings_copy[group][sample_id][metric]["vote_count"]
-
-        with open(DATA_FILE, "w") as f:
-            json.dump(ratings_copy, f, indent=4)
+    else: # local mode
+        try:
+            with open(DATA_FILE, "w") as f:
+                json.dump(ratings_copy, f, indent=4)
+        except IOError as e:
+            st.error(f"Error saving ratings locally: {e}")
 
 
-def get_lowest_coverage_metric(validation_data, ratings, it_background):
-    # Map IT background to keys in ratings.json
+# --- Adapted get_lowest_coverage_metric ---
+def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it_background):
     ratings_key = "Experten" if it_background == "Ja" else "Crowd"
 
-    sample_metrics = {}
-    for example in validation_data["examples"]:
-        sample_id = example["id"]
-        rubric = example["rubric"]
-        for metric in validation_data["rubrics"].get(rubric, []):
-            sample_metrics.setdefault(sample_id, []).append(metric)
-
-    # Collect all metrics from the validation data
+    # 1. Get all possible metrics (single, multi, pairwise)
     all_metrics = set()
-    for metrics in sample_metrics.values():
-        all_metrics.update(metrics)
+    # Add single/multi-turn metrics from validation_data_a (structure assumed same as _b)
+    for turn_type, criteria in validation_data_a.get("evaluation_criteria", {}).items():
+        for category, metrics in criteria.items():
+            all_metrics.update(metrics)
+    # Add pairwise metrics explicitly
+    all_metrics.update(PAIRWISE_METRICS)
 
+    if not all_metrics:
+        st.warning("No evaluation criteria found in validation set.")
+        return None
+
+    # 2. Map samples/pairs to their applicable metrics
+    sample_metrics_map = defaultdict(list) # For single/multi-turn
+    pair_metrics_map = defaultdict(list)   # For pairwise
+
+    # Process validation_data_a for single/multi-turn metrics
+    for turn_type in ["singleturn", "multiturn"]:
+        if turn_type in validation_data_a:
+            for category, samples in validation_data_a[turn_type].items():
+                category_metrics = validation_data_a.get("evaluation_criteria", {}).get(turn_type, {}).get(category, [])
+                for sample in samples:
+                    sample_id = sample.get("id")
+                    if sample_id:
+                        # Add non-pairwise metrics
+                        sample_metrics_map[sample_id].extend([m for m in category_metrics if m not in PAIRWISE_METRICS])
+
+    # Identify valid pairs and map pairwise metrics
+    ids_a = {s['id'] for turn_type in validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_a[turn_type] for s in validation_data_a[turn_type][cat]}
+    ids_b = {s['id'] for turn_type in validation_data_b if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_b[turn_type] for s in validation_data_b[turn_type][cat]}
+    common_ids = ids_a.intersection(ids_b)
+
+    for sample_id in common_ids:
+        # Determine turn type for the pair (assuming consistent across files)
+        turn_type_a = None
+        category_a = None
+        for tt in ["singleturn", "multiturn"]:
+             if tt in validation_data_a:
+                 for cat, samples in validation_data_a[tt].items():
+                     if any(s.get("id") == sample_id for s in samples):
+                         turn_type_a = tt
+                         category_a = cat
+                         break
+             if turn_type_a: break
+
+        if turn_type_a and category_a:
+             # Get applicable pairwise metrics for this category
+             category_metrics = validation_data_a.get("evaluation_criteria", {}).get(turn_type_a, {}).get(category_a, [])
+             applicable_pairwise = [m for m in category_metrics if m in PAIRWISE_METRICS]
+             if applicable_pairwise:
+                 pair_metrics_map[sample_id].extend(applicable_pairwise)
+
+
+    # 3. Calculate vote counts per metric
     metric_vote_counts = defaultdict(list)
-    for sample_id, metrics in sample_metrics.items():
+
+    # Ensure the ratings structure exists
+    if ratings_key not in ratings: ratings[ratings_key] = {}
+
+    # Count votes for single/multi-turn metrics
+    for sample_id, metrics in sample_metrics_map.items():
         for metric in metrics:
-            # Calculate vote count from the "votes" array
             vote_count = len(ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", []))
             metric_vote_counts[metric].append(vote_count)
 
+    # Count votes for pairwise metrics
+    for sample_id, metrics in pair_metrics_map.items():
+        for metric in metrics:
+            # Vote count for a pair is stored under the shared sample_id and the pairwise metric
+            vote_count = len(ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", []))
+            metric_vote_counts[metric].append(vote_count)
+
+    # 4. Calculate average coverage per metric
     metric_coverage = {}
-    for metric in all_metrics:  # Iterate through ALL metrics
-        vote_counts = metric_vote_counts[metric]
-        if vote_counts:
-            metric_coverage[metric] = sum(vote_counts) / len(vote_counts)
+    for metric in all_metrics:
+        vote_counts = metric_vote_counts.get(metric, [])
+        num_entities = 0 # Number of samples or pairs this metric applies to
+
+        if metric in PAIRWISE_METRICS:
+            num_entities = sum(1 for sample_id in pair_metrics_map if metric in pair_metrics_map[sample_id])
         else:
-            metric_coverage[metric] = 0  # Metrics with no votes get coverage 0
+            num_entities = sum(1 for sample_id in sample_metrics_map if metric in sample_metrics_map[sample_id])
 
-    # Find the metric with the lowest coverage
+        if num_entities > 0:
+            metric_coverage[metric] = sum(vote_counts) / num_entities if vote_counts else 0
+        else:
+            metric_coverage[metric] = 0 # Metric defined but no samples/pairs apply
+
+    # 5. Find the metric with the lowest coverage
     if not metric_coverage:
-        return random.choice(list(all_metrics)) if all_metrics else None  # Handle case with no metrics
+        return random.choice(list(all_metrics)) if all_metrics else None
 
-    lowest_coverage_metric = min(metric_coverage, key=metric_coverage.get)
-    return lowest_coverage_metric
+    min_coverage = min(metric_coverage.values())
+    lowest_coverage_metrics = [m for m, cov in metric_coverage.items() if cov == min_coverage]
+
+    return random.choice(lowest_coverage_metrics) if lowest_coverage_metrics else None
 
 
-def get_samples_for_metric(metric, ratings, it_background):
-    # Map IT background to keys in ratings.json
+# --- Adapted get_samples_for_metric ---
+def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings, it_background):
     ratings_key = "Experten" if it_background == "Ja" else "Crowd"
+    relevant_entities = [] # Can store single samples or pairs
 
-    samples = [s for s in validation_set["examples"] if metric in validation_set["rubrics"].get(s["rubric"], [])]
-    samples_with_vote_count = []
-    for sample in samples:
-        # Calculate vote count from the "votes" array
-        vote_count = len(ratings[ratings_key].get(sample["id"], {}).get(metric, {}).get("votes", []))
-        samples_with_vote_count.append((sample, vote_count))
-    samples_with_vote_count.sort(key=lambda x: x[1])
-    return [sample for sample, _ in samples_with_vote_count]
+    # Ensure the ratings structure exists
+    if ratings_key not in ratings: ratings[ratings_key] = {}
+
+    if metric in PAIRWISE_METRICS:
+        # Find pairs with the same ID in both files
+        samples_a_dict = {s['id']: s for turn_type in validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_a[turn_type] for s in validation_data_a[turn_type][cat]}
+        samples_b_dict = {s['id']: s for turn_type in validation_data_b if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_b[turn_type] for s in validation_data_b[turn_type][cat]}
+        common_ids = set(samples_a_dict.keys()).intersection(samples_b_dict.keys())
+
+        for sample_id in common_ids:
+            sample_a = samples_a_dict[sample_id]
+            sample_b = samples_b_dict[sample_id]
+
+            # Check if the metric applies to this pair's category/turn_type
+            turn_type_a = None
+            category_a = None
+            for tt in ["singleturn", "multiturn"]:
+                 if tt in validation_data_a:
+                     for cat, samples in validation_data_a[tt].items():
+                         if any(s.get("id") == sample_id for s in samples):
+                             turn_type_a = tt
+                             category_a = cat
+                             break
+                 if turn_type_a: break
+
+            if turn_type_a and category_a:
+                 category_metrics = validation_data_a.get("evaluation_criteria", {}).get(turn_type_a, {}).get(category_a, [])
+                 if metric in category_metrics:
+                     # Calculate vote count for this pair and metric
+                     vote_count = len(ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", []))
+                     relevant_entities.append(((sample_a, sample_b), vote_count)) # Store pair tuple
+
+    else: # Single/Multi-turn metric
+        for turn_type in ["singleturn", "multiturn"]:
+            if turn_type in validation_data_a:
+                for category, samples in validation_data_a[turn_type].items():
+                    category_metrics = validation_data_a.get("evaluation_criteria", {}).get(turn_type, {}).get(category, [])
+                    if metric in category_metrics:
+                        for sample in samples:
+                            sample_id = sample.get("id")
+                            if sample_id:
+                                vote_count = len(ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", []))
+                                relevant_entities.append((sample, vote_count)) # Store single sample
+
+    # Sort entities (samples or pairs) by vote count
+    relevant_entities.sort(key=lambda x: x[1])
+
+    # Return only the sample objects or pair tuples
+    return [entity for entity, _ in relevant_entities]
 
 
-def generate_prompt(sample, metric, swap_options=False):
-    template = evaluation_templates[metric]["prompt"]
-    required_attributes = evaluation_templates[metric]["required_attributes"]
-    rating_scale = evaluation_templates[metric]["rating_scale"]
+# --- Adapted generate_prompt ---
+def generate_prompt(entity, metric, swap_options=False):
+    if metric not in evaluation_templates:
+        raise ValueError(f"Metric '{metric}' not found in evaluation_templates.")
+
+    template_config = evaluation_templates[metric]
+    template = template_config["prompt"]
+    required_attributes = template_config["required_attributes"]
+    rating_scale = template_config["rating_scale"]
 
     sample_data = {}
-    for attr in required_attributes:
-        if attr in sample:
-            sample_data[attr] = sample[attr]
-        elif attr == "dialog" and "dialog" in sample:
-            sample_data[attr] = "\n".join([f"{turn[0]}: {turn[1]}" for turn in sample["dialog"]])
-        elif attr == "dialog_a" and "dialogs" in sample:
-            dialogs = sample["dialogs"]
-            if swap_options:
-                dialogs = dialogs[::-1]
-            sample_data[attr] = "\n".join([f"{turn[0]}: {turn[1]}" for turn in dialogs[0]])
-        elif attr == "dialog_b" and "dialogs" in sample:
-            dialogs = sample["dialogs"]
-            if swap_options:
-                dialogs = dialogs[::-1]
-            sample_data[attr] = "\n".join([f"{turn[0]}: {turn[1]}" for turn in dialogs[1]])
-        elif attr == "response_a" and "responses" in sample:
-            responses = sample["responses"]
-            if swap_options:
-                responses = responses[::-1]
-            sample_data[attr] = responses[0]
-        elif attr == "response_b" and "responses" in sample:
-            responses = sample["responses"]
-            if swap_options:
-                responses = responses[::-1]
-            sample_data[attr] = responses[1]
-        else:
-            raise ValueError(f"Missing required attribute '{attr}' in sample {sample['id']}")
+    missing_attrs = []
 
-    return template.format(**sample_data), rating_scale
+    # --- Handle Pairwise vs Single ---
+    is_pairwise = isinstance(entity, tuple) and len(entity) == 2
+
+    if is_pairwise:
+        sample_a, sample_b = entity
+        sample_id = sample_a.get("id", "N/A") # Assume IDs match
+
+        # --- IMPORTANT: Update this mapping based on your pairwise templates ---
+        for attr in required_attributes:
+            # Attributes common to both samples (like query)
+            if attr == "query":
+                sample_data[attr] = sample_a.get(attr) or sample_b.get(attr) or f"[Attribute '{attr}' not found]"
+            # Attributes specific to sample A/B (like answer, history)
+            elif attr.endswith("_a"):
+                base_attr = attr[:-2] # e.g., "answer" from "answer_a"
+                source_sample = sample_b if swap_options else sample_a
+                if base_attr == "history": # Special handling for history
+                     formatted_history = "\n".join([f"{turn.get('role', 'unknown')}: {turn.get('content', '')}" for turn in source_sample.get("history", [])])
+                     sample_data[attr] = formatted_history
+                elif base_attr in source_sample:
+                    sample_data[attr] = source_sample[base_attr]
+                else:
+                    missing_attrs.append(attr)
+                    sample_data[attr] = f"[Attribute '{base_attr}' not found in sample {'B' if swap_options else 'A'}]"
+            elif attr.endswith("_b"):
+                base_attr = attr[:-2]
+                source_sample = sample_a if swap_options else sample_b
+                if base_attr == "history": # Special handling for history
+                     formatted_history = "\n".join([f"{turn.get('role', 'unknown')}: {turn.get('content', '')}" for turn in source_sample.get("history", [])])
+                     sample_data[attr] = formatted_history
+                elif base_attr in source_sample:
+                    sample_data[attr] = source_sample[base_attr]
+                else:
+                    missing_attrs.append(attr)
+                    sample_data[attr] = f"[Attribute '{base_attr}' not found in sample {'A' if swap_options else 'B'}]"
+            # Handle other required attributes if necessary
+            else:
+                 # Try getting from sample_a first, then sample_b
+                 value = sample_a.get(attr, sample_b.get(attr))
+                 if value is not None:
+                     sample_data[attr] = value
+                 else:
+                     missing_attrs.append(attr)
+                     sample_data[attr] = f"[Attribute '{attr}' not found in pair]"
+
+    else: # Single sample
+        sample = entity
+        sample_id = sample.get("id", "N/A")
+        for attr in required_attributes:
+            if attr in sample:
+                sample_data[attr] = sample[attr]
+            elif attr == "history" and "history" in sample:
+                formatted_history = "\n".join([f"{turn.get('role', 'unknown')}: {turn.get('content', '')}" for turn in sample["history"]])
+                sample_data[attr] = formatted_history
+            # Add other specific handlers (like retrieved_contexts) if needed
+            # elif attr == "retrieved_contexts" and "retrieved_contexts" in sample:
+            #     sample_data[attr] = "\n".join(sample["retrieved_contexts"])
+            else:
+                missing_attrs.append(attr)
+                sample_data[attr] = f"[Attribute '{attr}' not found in sample]"
+
+    if missing_attrs:
+        st.warning(f"Missing required attributes {missing_attrs} for metric '{metric}' in sample/pair {sample_id}. Check 'required_attributes' in evaluation_templates.")
+
+    try:
+        formatted_prompt = template.format(**sample_data)
+    except KeyError as e:
+        st.error(f"Error formatting prompt for metric '{metric}', sample/pair {sample_id}: Missing key {e}. Check template placeholders and 'required_attributes'.")
+        formatted_prompt = "[Error formatting prompt]"
+    except Exception as e:
+        st.error(f"An unexpected error occurred during prompt formatting for metric '{metric}', sample/pair {sample_id}: {e}")
+        formatted_prompt = "[Error formatting prompt]"
+
+    return formatted_prompt, rating_scale
 
 
-def save_rating(sample_id, metric, rating, it_background, swap_options, supabase_client=None):
-    # Map IT background to keys in ratings.json
+# --- Adapted save_rating ---
+def save_rating(sample_id, metric, rating, it_background, is_pairwise, swap_options, supabase_client=None):
     ratings_key = "Experten" if it_background == "Ja" else "Crowd"
 
-    if sample_id not in st.session_state.ratings[ratings_key]:
-        st.session_state.ratings[ratings_key][sample_id] = {}
+    # Ensure nested dictionaries exist
+    if ratings_key not in st.session_state.ratings: st.session_state.ratings[ratings_key] = {}
+    if sample_id not in st.session_state.ratings[ratings_key]: st.session_state.ratings[ratings_key][sample_id] = {}
     if metric not in st.session_state.ratings[ratings_key][sample_id]:
         st.session_state.ratings[ratings_key][sample_id][metric] = {"votes": [], "swap_history": []}
-    
-    swap_value = swap_options if "dialogs" in st.session_state.current_sample or "responses" in st.session_state.current_sample else None
-    
-    st.session_state.ratings[ratings_key][sample_id][metric]["votes"].append(rating)
-    st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"].append(swap_value)
+    elif "votes" not in st.session_state.ratings[ratings_key][sample_id][metric]:
+         st.session_state.ratings[ratings_key][sample_id][metric]["votes"] = []
+    elif "swap_history" not in st.session_state.ratings[ratings_key][sample_id][metric]:
+         st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"] = []
 
-    # Save to Supabase or Local File
-    if supabase_client:
+
+    # Determine swap value to save
+    swap_value_to_save = swap_options if is_pairwise else None
+
+    # Append the new rating and swap status
+    st.session_state.ratings[ratings_key][sample_id][metric]["votes"].append(rating)
+    st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"].append(swap_value_to_save)
+
+    # --- Save to Supabase or Local File ---
+    if MODE == "supabase" and supabase_client:
         try:
-            supabase_client.schema("api").table("ratings").insert({
+            insert_data = {
                 "rater_type": ratings_key,
-                "sample_id": sample_id,
+                "sample_id": sample_id, # Represents sample or pair ID
                 "metric": metric,
                 "vote": rating,
-                "swap_positions": None if swap_value is None else swap_value  # Ensure None when irrelevant
-            }).execute()
+                "swap_positions": swap_value_to_save, # Save swap status
+            }
+            response = supabase_client.schema("api").table("ratings").insert(insert_data).execute()
+            # Optional error checking on response
         except Exception as e:
             st.error(f"Error saving rating to Supabase: {e}")
-    else:
-        save_ratings(st.session_state.ratings, None)  # Save locally
+    elif MODE == "local":
+        save_ratings(st.session_state.ratings, None)
 
 
-
+# --- Adapted start_new_round ---
 def start_new_round():
-    chosen_metric = get_lowest_coverage_metric(validation_set, st.session_state.ratings, st.session_state.it_background)
+    # Ensure validation_sets are loaded
+    if 'validation_sets' not in globals():
+         st.error("Validation sets not loaded.")
+         st.stop()
+
+    validation_data_a = validation_sets['a']
+    validation_data_b = validation_sets['b']
+
+    chosen_metric = get_lowest_coverage_metric(
+        validation_data_a, validation_data_b, st.session_state.ratings, st.session_state.it_background
+    )
     if chosen_metric is None:
         st.error("Error: Could not determine the next metric.")
         st.stop()
+
     if chosen_metric not in evaluation_templates:
-        st.error(f"Error: The metric {chosen_metric} is not defined in the evaluation_templates")
+        st.error(f"Error: Metric '{chosen_metric}' not defined in evaluation_templates.")
         st.stop()
+
     st.session_state.current_metric = chosen_metric
-    st.session_state.samples = get_samples_for_metric(
-        st.session_state.current_metric, st.session_state.ratings, st.session_state.it_background
+    st.session_state.is_pairwise = chosen_metric in PAIRWISE_METRICS
+
+    # Get samples or pairs for the chosen metric
+    st.session_state.entities = get_samples_for_metric(
+        st.session_state.current_metric, validation_data_a, validation_data_b, st.session_state.ratings, st.session_state.it_background
     )
-    st.session_state.num_samples_this_round = min(5, len(st.session_state.samples))
-    st.session_state.samples = st.session_state.samples[:5]
-    st.session_state.sample_count = 0
+
+    if not st.session_state.entities:
+         st.warning(f"No samples/pairs found for the chosen metric '{chosen_metric}'. Trying next round.")
+         st.session_state.round_over = True
+         return
+
+    # Determine number of entities (samples/pairs) for this round
+    st.session_state.num_entities_this_round = min(5, len(st.session_state.entities))
+    st.session_state.entities_this_round = st.session_state.entities[:st.session_state.num_entities_this_round]
+
+    st.session_state.entity_count = 0 # Renamed from sample_count
     st.session_state.round_over = False
     st.session_state.round_count += 1
-    if st.session_state.samples:
-        st.session_state.current_sample = st.session_state.samples.pop(0)
-        # Determine if sample is pairwise and set swap options
-        if "dialogs" in st.session_state.current_sample or "responses" in st.session_state.current_sample:
-            st.session_state.swap_options = random.choice([True, False])
-        else:
-            st.session_state.swap_options = False
+    st.session_state.current_sample = None # Reset single sample view
+    st.session_state.current_sample_pair = None # Reset pair view
 
+    if st.session_state.entities_this_round:
+        current_entity = st.session_state.entities_this_round.pop(0)
+        if st.session_state.is_pairwise:
+            st.session_state.current_sample_pair = current_entity
+            st.session_state.swap_options = random.choice([True, False]) # Randomize swap for pairs
+        else:
+            st.session_state.current_sample = current_entity
+            st.session_state.swap_options = False # No swap for single samples
     else:
+        st.warning("Started round but no entities available.")
         st.session_state.round_over = True
 
 
-# Load the validation set
+# --- Load BOTH validation sets ---
+validation_sets = {}
 try:
-    with open(VALIDATION_FILE, "r") as f:
-        validation_set = json.load(f)
-except FileNotFoundError:
-    st.error(f"Error: {VALIDATION_FILE} not found. Please ensure the file exists.")
+    with open(VALIDATION_FILE_A, "r", encoding="utf-8") as f:
+        validation_sets['a'] = json.load(f)
+    with open(VALIDATION_FILE_B, "r", encoding="utf-8") as f:
+        validation_sets['b'] = json.load(f)
+except FileNotFoundError as e:
+    st.error(f"Error: Validation file not found: {e.filename}. Please ensure both {VALIDATION_FILE_A} and {VALIDATION_FILE_B} exist.")
     st.stop()
 except json.JSONDecodeError as e:
-    st.error(f"Error: Failed to decode json data from {VALIDATION_FILE}: {e}")
+    st.error(f"Error: Failed to decode JSON data from validation file. Check syntax: {e}")
+    st.stop()
+except Exception as e:
+    st.error(f"An unexpected error occurred while loading validation files: {e}")
     st.stop()
 
-# Initialize session state
-if "ratings" not in st.session_state:
-    st.session_state.ratings = {}
-if "samples" not in st.session_state:
-    st.session_state.samples = []
-if "current_sample" not in st.session_state:
-    st.session_state.current_sample = None
-if "current_metric" not in st.session_state:
-    st.session_state.current_metric = None
-if "sample_count" not in st.session_state:
-    st.session_state.sample_count = 0
-if "round_over" not in st.session_state:
-    st.session_state.round_over = False
-if "user_rating" not in st.session_state:
-    st.session_state.user_rating = None
-if "num_samples_this_round" not in st.session_state:
-    st.session_state.num_samples_this_round = 0
-if "app_started" not in st.session_state:
-    st.session_state.app_started = False
-if "it_background" not in st.session_state:
-    st.session_state.it_background = None
-if "round_count" not in st.session_state:
-    st.session_state.round_count = 0
-if "swap_options" not in st.session_state:
-    st.session_state.swap_options = False
 
-# Initialize Supabase client
+# --- Initialize session state ---
+st.session_state.setdefault("ratings", {})
+st.session_state.setdefault("entities", []) # Stores samples OR pairs for the current metric
+st.session_state.setdefault("entities_this_round", []) # Stores entities for the current round batch
+st.session_state.setdefault("current_sample", None) # For single sample display
+st.session_state.setdefault("current_sample_pair", None) # For pairwise display
+st.session_state.setdefault("current_metric", None)
+st.session_state.setdefault("entity_count", 0) # Tracks progress within the round batch
+st.session_state.setdefault("round_over", True)
+st.session_state.setdefault("user_rating", None)
+st.session_state.setdefault("num_entities_this_round", 0) # Total entities in the current batch
+st.session_state.setdefault("app_started", False)
+st.session_state.setdefault("it_background", None)
+st.session_state.setdefault("round_count", 0)
+st.session_state.setdefault("swap_options", False) # Controls A/B swap for pairwise
+st.session_state.setdefault("is_pairwise", False) # Tracks if current metric is pairwise
+
+# Initialize Supabase client or load local ratings
+supabase_client = None
 if MODE == "supabase":
     try:
         supabase_client = init_supabase()
-        st.session_state.ratings = load_ratings(supabase_client) # load ratings right after creating the client
+        st.session_state.ratings = load_ratings(supabase_client)
     except ValueError as e:
-      st.error(e)
-      st.stop()
+        st.error(f"Supabase initialization failed: {e}")
+        st.stop()
+    except Exception as e:
+        st.error(f"An unexpected error occurred during Supabase setup: {e}")
+        st.stop()
+elif MODE == "local":
+    st.session_state.ratings = load_ratings(None)
 else:
-    st.session_state.ratings = load_ratings(None) # load ratings in local mode
+    st.error(f"Invalid MODE '{MODE}'. Use 'local' or 'supabase'.")
+    st.stop()
 
 
 def main():
     st.title("RAG Answer Rating App")
 
+    # --- Initial User Setup ---
     if not st.session_state.app_started:
+        # ... (no changes needed)
         st.write("Bitte geben Sie an, ob Sie über einen IT-Hintergrund verfügen.")
-        st.session_state.it_background = st.radio("IT-Hintergrund:", ("Ja", "Nein"))
-
-        if st.button("Start"):
-            st.session_state.app_started = True
-            st.rerun()
+        it_background_choice = st.radio(
+            "IT-Hintergrund:",
+            ("Ja", "Nein"),
+            key="it_background_radio",
+            horizontal=True,
+            index=None
+        )
+        if st.button("Start", key="start_button"):
+            if it_background_choice is None:
+                st.warning("Bitte wählen Sie eine Option für den IT-Hintergrund.")
+            else:
+                st.session_state.it_background = it_background_choice
+                st.session_state.app_started = True
+                st.session_state.round_over = True
+                st.rerun()
         return
 
+    # --- Round Management ---
     if st.session_state.round_over:
-        st.success("Danke für Ihre Bewertungen!")
-        if st.button("Next Round"):
+        # ... (no changes needed)
+        if st.session_state.round_count > 0:
+             st.success(f"Runde {st.session_state.round_count} abgeschlossen. Danke für Ihre Bewertungen!")
+        if st.button("Nächste Runde starten", key="next_round_button"):
             start_new_round()
-            st.rerun()
+            if not st.session_state.round_over:
+                 st.rerun()
         return
 
-    if not st.session_state.current_sample:
-        start_new_round()
+    # Check for inconsistent state
+    current_entity_for_display = st.session_state.current_sample_pair if st.session_state.is_pairwise else st.session_state.current_sample
+    if not current_entity_for_display and not st.session_state.round_over:
+         st.warning("Zustandsfehler: Kein aktuelles Sample/Paar. Starte neue Runde.")
+         start_new_round()
+         if not st.session_state.round_over:
+             st.rerun()
+         else:
+             return
 
-    # --- Step Count Display (Framed and Centered) ---
+    # --- Display Current Entity (Sample or Pair) ---
     st.markdown(
         f"""
-        <div style="
-            display: flex;
-            justify-content: center;
-            margin-bottom: 20px;
-        ">
-            <div style="
-                border: 1px solid #ccc;
-                border-radius: 10px;
-                padding: 10px;
-                text-align: center;
-                width: 100%;
-            ">
-                Sample {st.session_state.sample_count + 1}/{st.session_state.num_samples_this_round}
+        <div style="display: flex; justify-content: center; margin-bottom: 20px;">
+            <div style="border: 1px solid #ccc; border-radius: 10px; padding: 10px; text-align: center; width: 100%;">
+                Item {st.session_state.entity_count + 1} / {st.session_state.num_entities_this_round} (Runde {st.session_state.round_count})
             </div>
         </div>
         """,
@@ -348,47 +630,91 @@ def main():
     )
 
     st.write(general_intro_prompt)
-    st.write(f"Bewertungsdimension: {st.session_state.current_metric}")
-    prompt, rating_scale = generate_prompt(
-        st.session_state.current_sample, st.session_state.current_metric, st.session_state.swap_options
-    )
-    st.write(prompt)
+    st.write(f"**Bewertungsdimension:** {st.session_state.current_metric}")
 
-    radio_key = f"user_rating_{st.session_state.round_count}_{st.session_state.sample_count}"
-    user_rating = st.radio(
-        "Bewertung:",
+    try:
+        # Pass the correct entity (sample or pair) and swap_options
+        prompt, rating_scale = generate_prompt(
+            current_entity_for_display,
+            st.session_state.current_metric,
+            st.session_state.swap_options # Pass swap state
+        )
+        st.write("---")
+        st.markdown(prompt, unsafe_allow_html=True)
+        st.write("---")
+
+    except ValueError as e:
+        st.error(f"Fehler beim Generieren des Prompts: {e}")
+        st.button("Problem melden und nächste Runde starten", on_click=lambda: setattr(st.session_state, 'round_over', True))
+        return
+    except Exception as e:
+         st.error(f"Unerwarteter Fehler bei der Prompt-Generierung: {e}")
+         st.button("Problem melden und nächste Runde starten", on_click=lambda: setattr(st.session_state, 'round_over', True))
+         return
+
+    # --- Rating Input ---
+    # Determine sample ID for the key (consistent for pairs)
+    current_id = current_entity_for_display[0]['id'] if st.session_state.is_pairwise else current_entity_for_display['id']
+    radio_key = f"user_rating_{st.session_state.round_count}_{current_id}_{st.session_state.entity_count}"
+    st.session_state.user_rating = st.radio(
+        "Ihre Bewertung:",
         rating_scale,
         key=radio_key,
-        horizontal=True
+        horizontal=True,
+        index=None
     )
 
-    if st.button("Next"):
-        key = f"user_rating_{st.session_state.round_count}_{st.session_state.sample_count}"
-        current_rating = st.session_state.get(key)
+    # --- Next Button Logic ---
+    if st.button("Weiter", key="next_entity_button"):
+        current_rating = st.session_state.user_rating
 
         if current_rating is None:
-            st.warning("Bitte eine Bewertung auswählen, bevor Sie fortfahren.")
+            st.warning("Bitte wählen Sie eine Bewertung aus, bevor Sie fortfahren.")
         else:
-            save_rating(
-                st.session_state.current_sample["id"],
-                st.session_state.current_metric,
-                current_rating,
-                st.session_state.it_background,
-                st.session_state.swap_options,
-                supabase_client if MODE == "supabase" else None  # Pass Supabase client
-            )
-            st.session_state.sample_count += 1
+            try:
+                # Get the ID (consistent for single or pair)
+                sample_id_to_save = current_id
 
-            if st.session_state.sample_count >= st.session_state.num_samples_this_round or not st.session_state.samples:
-                st.session_state.round_over = True  # No need to call save_ratings() anymore
-            else:
-                st.session_state.current_sample = st.session_state.samples.pop(0)
-                if "dialogs" in st.session_state.current_sample or "responses" in st.session_state.current_sample:
-                    st.session_state.swap_options = random.choice([True, False])
+                save_rating(
+                    sample_id_to_save,
+                    st.session_state.current_metric,
+                    current_rating,
+                    st.session_state.it_background,
+                    st.session_state.is_pairwise, # Pass pairwise status
+                    st.session_state.swap_options, # Pass swap status
+                    supabase_client
+                )
+                st.session_state.entity_count += 1
+
+                # Check if the round batch is finished
+                if st.session_state.entity_count >= st.session_state.num_entities_this_round or not st.session_state.entities_this_round:
+                    st.session_state.round_over = True
+                    st.session_state.current_sample = None
+                    st.session_state.current_sample_pair = None
+                    st.session_state.entities_this_round = []
                 else:
-                    st.session_state.swap_options = False
+                    # Get the next entity from the current round's batch
+                    next_entity = st.session_state.entities_this_round.pop(0)
+                    if st.session_state.is_pairwise:
+                        st.session_state.current_sample_pair = next_entity
+                        st.session_state.current_sample = None
+                        st.session_state.swap_options = random.choice([True, False]) # Randomize swap for next pair
+                    else:
+                        st.session_state.current_sample = next_entity
+                        st.session_state.current_sample_pair = None
+                        st.session_state.swap_options = False # Reset swap for single sample
 
-            st.rerun()
+                st.session_state.user_rating = None
+                st.rerun()
+
+            except KeyError as e:
+                 st.error(f"Fehler beim Speichern: Fehlender Schlüssel {e}. Entity: {current_entity_for_display}")
+                 st.session_state.round_over = True
+                 st.rerun()
+            except Exception as e:
+                 st.error(f"Fehler beim Speichern der Bewertung: {e}")
+                 st.session_state.round_over = True
+                 st.rerun()
 
 
 if __name__ == "__main__":
