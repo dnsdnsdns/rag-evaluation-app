@@ -10,12 +10,12 @@
         "bad-intentions": ["purpose", "quality_pairwise"]
       },
       "multiturn": {
-        "specific": ["multiturn_faithfulness", "multiturn_answer_relevance", "multiturn_answer_correctness", "multiturn_context_relevance", "multi_turn_quality_pairwise"],
-        "seminar-search": ["multiturn_faithfulness", "multiturn_answer_relevance", "multiturn_context_relevance", "multi_turn_quality_pairwise"],
-        "handoff": ["multiturn_handoff", "multi_turn_quality_pairwise"],
-        "out-of-scope": ["multiturn_purpose", "multi_turn_quality_pairwise"],
-        "abstract": ["multiturn_answer_relevance", "multiturn_context_relevance", "multi_turn_quality_pairwise"],
-        "bad-intentions": ["multiturn_purpose", "multi_turn_quality_pairwise"]
+        "specific": ["multiturn_faithfulness", "multiturn_answer_relevance", "multiturn_answer_correctness", "multiturn_context_relevance", "multiturn_quality_pairwise"],
+        "seminar-search": ["multiturn_faithfulness", "multiturn_answer_relevance", "multiturn_context_relevance", "multiturn_quality_pairwise"],
+        "handoff": ["multiturn_handoff", "multiturn_quality_pairwise"],
+        "out-of-scope": ["multiturn_purpose", "multiturn_quality_pairwise"],
+        "abstract": ["multiturn_answer_relevance", "multiturn_context_relevance", "multiturn_quality_pairwise"],
+        "bad-intentions": ["multiturn_purpose", "multiturn_quality_pairwise"]
       }
     },
     "singleturn": {

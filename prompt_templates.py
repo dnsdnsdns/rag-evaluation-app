@@ -51,7 +51,6 @@ evaluation_templates = {
         "prompt": (
             "Vergleiche die folgenden zwei Antworten auf die gleiche Frage und wähle aus welche besser ist:\n\n"
             "Frage: {query}\n\n"
-            "A: {answer_a}\n\nB: {answer_b}"
         ),
         "required_attributes": ["answer_a", "answer_b", "query"],
         "rating_scale": ["A", "B", "Unentschieden"]
@@ -83,6 +82,15 @@ evaluation_templates = {
         "required_attributes": ["retrieved_contexts", "query", "history"],
         "rating_scale": ["Ja", "Nein"]
     },
+    "multiturn_faithfulness": {
+        "prompt": (
+            "Bitte bewerte, ob die Antwort ausschließlich auf Fakten aus dem Kontext beruht unter Berücksichtigung des bisherigen Gesprächsverlaufs:\n\n"
+            "Gesprächsverlauf:\n\n{history}\n\n"
+            "Kontext: {retrieved_contexts}\n\nAntwort: {answer}"
+        ),
+        "required_attributes": ["retrieved_contexts", "answer", "history"],
+        "rating_scale": ["Ja", "Nein"]
+    },
     "multiturn_handoff": {
         "prompt": (
             "Beurteile, ob in der Antwort eine Weiterleitung an das Seminarteam / Vertriebsteam vorliegt unter Berücksichtigung des bisherigen Gesprächsverlaufs:\n\n"
@@ -105,7 +113,6 @@ evaluation_templates = {
             "Vergleiche die folgenden zwei Antworten auf die gleiche Frage und wähle aus welche besser ist unter Berücksichtigung des bisherigen Gesprächsverlaufs:\n\n"
             "Gesprächsverlauf:\n\n{history}\n\n"
             "Frage: {query}\n\n"
-            "A: {answer_a}\n\nB: {answer_b}"
         ),
         "required_attributes": ["answer_a", "answer_b", "query", "history"],
         "rating_scale": ["A", "B", "Unentschieden"]

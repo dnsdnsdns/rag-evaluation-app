@@ -3,6 +3,7 @@ import json
 import random
 import os
 import supabase
+import html
 from collections import defaultdict
 # --- IMPORTANT: Update prompt_templates.py for pairwise metrics ---
 # Ensure quality_pairwise requires ['query', 'answer_a', 'answer_b']
@@ -16,7 +17,7 @@ VALIDATION_FILE_B = "validationset-b.json"
 MODE = "local"  # supported modes: "local", "supabase"
 
 # --- Define Pairwise Metrics ---
-PAIRWISE_METRICS = {"quality_pairwise", "multi_turn_quality_pairwise"}
+PAIRWISE_METRICS = {"quality_pairwise", "multiturn_quality_pairwise"}
 
 # --- Helper Functions ---
 
@@ -369,83 +370,184 @@ def generate_prompt(entity, metric, swap_options=False):
     required_attributes = template_config["required_attributes"]
     rating_scale = template_config["rating_scale"]
 
-    sample_data = {}
+    sample_data = {} # For formatting the base instruction template
+    content_a = "[Antwort A nicht gefunden]" # Default content for option A answer
+    content_b = "[Antwort B nicht gefunden]" # Default content for option B answer
     missing_attrs = []
+    formatted_shared_history = None # To store formatted shared history if applicable
 
-    # --- Handle Pairwise vs Single ---
     is_pairwise = isinstance(entity, tuple) and len(entity) == 2
 
     if is_pairwise:
-        sample_a, sample_b = entity
-        sample_id = sample_a.get("id", "N/A") # Assume IDs match
+        # --- PAIRWISE LOGIC ---
+        sample_a_orig, sample_b_orig = entity
+        sample_id = sample_a_orig.get("id", "N/A") # Assume IDs match
 
-        # --- IMPORTANT: Update this mapping based on your pairwise templates ---
-        for attr in required_attributes:
-            # Attributes common to both samples (like query)
-            if attr == "query":
-                sample_data[attr] = sample_a.get(attr) or sample_b.get(attr) or f"[Attribute '{attr}' not found]"
-            # Attributes specific to sample A/B (like answer, history)
-            elif attr.endswith("_a"):
-                base_attr = attr[:-2] # e.g., "history" from "history_a"
-                source_sample = sample_b if swap_options else sample_a
-                if base_attr == "history": # Special handling for history
-                     # <<< Use the new formatting function here >>>
-                     sample_data[attr] = format_chat_history(source_sample.get("history", []))
-                elif base_attr in source_sample:
-                    sample_data[attr] = source_sample[base_attr]
-                else:
-                    missing_attrs.append(attr)
-                    sample_data[attr] = f"[Attribute '{base_attr}' not found in sample {'B' if swap_options else 'A'}]"
-            elif attr.endswith("_b"):
-                base_attr = attr[:-2]
-                source_sample = sample_a if swap_options else sample_b
-                if base_attr == "history": # Special handling for history
-                     # <<< Use the new formatting function here >>>
-                     sample_data[attr] = format_chat_history(source_sample.get("history", []))
-                elif base_attr in source_sample:
-                    sample_data[attr] = source_sample[base_attr]
-                else:
-                    missing_attrs.append(attr)
-                    sample_data[attr] = f"[Attribute '{base_attr}' not found in sample {'A' if swap_options else 'B'}]"
-            # Handle other required attributes if necessary
+        # Determine which sample provides content for A and B based on swap_options
+        sample_for_a = sample_b_orig if swap_options else sample_a_orig
+        sample_for_b = sample_a_orig if swap_options else sample_b_orig
+
+        # 1. Handle Shared History (if required by the metric)
+        if "history" in required_attributes:
+            # Fetch history from one sample (assuming they are identical)
+            history_list = sample_a_orig.get("history", [])
+            if history_list:
+                formatted_shared_history = format_chat_history(history_list)
+                # Add to sample_data if the template uses {shared_history} placeholder
+                sample_data["history"] = formatted_shared_history
             else:
-                 # Try getting from sample_a first, then sample_b
-                 value = sample_a.get(attr, sample_b.get(attr))
-                 if value is not None:
-                     sample_data[attr] = value
-                 else:
-                     missing_attrs.append(attr)
-                     sample_data[attr] = f"[Attribute '{attr}' not found in pair]"
+                missing_attrs.append("history")
+                sample_data["history"] = "[Chat-Verlauf nicht gefunden]"
 
-    else: # Single sample
+        # 2. Populate other base template data (e.g., query, if needed)
+        #    Exclude 'history' and attributes ending in _a/_b
+        base_template_attrs = [
+            attr for attr in required_attributes
+            if not (attr.endswith('_a') or attr.endswith('_b') or attr == 'history')
+        ]
+        for attr in base_template_attrs:
+            value = sample_a_orig.get(attr, sample_b_orig.get(attr))
+            if value is not None:
+                sample_data[attr] = value
+            else:
+                missing_attrs.append(attr)
+                sample_data[attr] = f"[Attribute '{attr}' nicht gefunden]"
+
+        # 3. Extract the differing content (e.g., answer_a, answer_b) for columns
+        attr_a = next((attr for attr in required_attributes if attr.endswith('_a')), None)
+        attr_b = next((attr for attr in required_attributes if attr.endswith('_b')), None)
+
+        if not attr_a or not attr_b:
+             st.error(f"Pairwise metric '{metric}' misconfiguration: Missing required attributes ending in '_a' and '_b' in evaluation_templates.")
+             formatted_prompt = "[Fehler: Fehlende _a/_b Attribute in Konfiguration]"
+             return formatted_prompt, rating_scale # Return early
+
+        base_attr_a = attr_a[:-2] # e.g., "answer" from "answer_a"
+        base_attr_b = attr_b[:-2] # e.g., "answer" from "answer_b"
+
+        # Get content for column A (using sample_for_a)
+        if base_attr_a in sample_for_a:
+            raw_content_a = str(sample_for_a[base_attr_a])
+            content_a = html.escape(raw_content_a) # Escape the differing content
+        else:
+            missing_attrs.append(attr_a)
+            content_a = f"[Attribute '{base_attr_a}' nicht in Sample A gefunden ({'getauscht' if swap_options else 'original'})]"
+
+        # Get content for column B (using sample_for_b)
+        if base_attr_b in sample_for_b:
+            raw_content_b = str(sample_for_b[base_attr_b])
+            content_b = html.escape(raw_content_b) # Escape the differing content
+        else:
+            missing_attrs.append(attr_b)
+            content_b = f"[Attribute '{base_attr_b}' nicht in Sample B gefunden ({'original' if swap_options else 'getauscht'})]"
+
+        # 4. Construct Final Display (Instructions + Columns)
+        try:
+            # Format the base instruction part (which might now include shared_history)
+            formatted_instruction_prompt = template.format(**sample_data)
+        except KeyError as e:
+             st.error(f"Error formatting base prompt for metric '{metric}', sample/pair {sample_id}: Missing key {e}. Check template placeholders.")
+             formatted_instruction_prompt = f"[Error formatting instructions: Missing key {e}]"
+        except Exception as e:
+             st.error(f"An unexpected error occurred during base prompt formatting for metric '{metric}', sample/pair {sample_id}: {e}")
+             formatted_instruction_prompt = "[Error formatting instructions]"
+
+        # --- HTML Structure: Instructions first, then columns for differing answers ---
+        # (CSS can remain the same as before)
+        html_columns = f"""
+<style>
+.column-container {{
+    display: flex;
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+    gap: 24px;       /* Space between columns */
+    margin-top: 20px;
+    justify-content: center; /* Center columns if they wrap */
+}}
+
+.column {{
+    /* --- MODIFICATION START --- */
+    flex: 1 1 300px; /* Allow columns to grow and shrink, base width 300px */
+    /* Removed max-width: 45%; to let them fill more space */
+    min-width: 280px; /* Ensure minimum width */
+    /* --- MODIFICATION END --- */
+    border: 1px solid #dcdcdc;
+    padding: 20px;
+    border-radius: 12px;
+    background-color: #ffffff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    transition: box-shadow 0.3s ease;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}}
+
+.column:hover {{
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}}
+
+.column h3 {{
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.2rem;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 8px;
+    color: #333;
+}}
+
+.column-content {{
+    font-size: 1rem;
+    line-height: 1.5;
+    color: #444;
+}}
+
+.column-content b {{ /* For history prefix */
+    color: #111;
+}}
+</style>
+
+{formatted_instruction_prompt}
+
+<div class="column-container">
+    <div class="column">
+        <h3>Antwort A</h3>
+        <div class="column-content">{content_a}</div>
+    </div>
+    <div class="column">
+        <h3>Antwort B</h3>
+        <div class="column-content">{content_b}</div>
+    </div>
+</div>
+"""
+        formatted_prompt = html_columns
+        # --- End HTML construction ---
+
+    else:
+        # --- SINGLE SAMPLE LOGIC (Remains the same) ---
         sample = entity
         sample_id = sample.get("id", "N/A")
         for attr in required_attributes:
             if attr == "history" and "history" in sample:
-                 # <<< Use the new formatting function here >>>
                  sample_data[attr] = format_chat_history(sample.get("history", []))
             elif attr in sample:
                  sample_data[attr] = sample[attr]
-            # Add other specific handlers (like retrieved_contexts) if needed
-            # elif attr == "retrieved_contexts" and "retrieved_contexts" in sample:
-            #     sample_data[attr] = "\n".join(sample["retrieved_contexts"])
             else:
                 missing_attrs.append(attr)
                 sample_data[attr] = f"[Attribute '{attr}' not found in sample]"
 
+        try:
+            formatted_prompt = template.format(**sample_data)
+        except KeyError as e:
+            st.error(f"Error formatting prompt for metric '{metric}', sample {sample_id}: Missing key {e}. Check template placeholders and 'required_attributes'.")
+            formatted_prompt = "[Error formatting prompt]"
+        except Exception as e:
+            st.error(f"An unexpected error occurred during prompt formatting for metric '{metric}', sample {sample_id}: {e}")
+            formatted_prompt = "[Error formatting prompt]"
+
+
     if missing_attrs:
         st.warning(f"Missing required attributes {missing_attrs} for metric '{metric}' in sample/pair {sample_id}. Check 'required_attributes' in evaluation_templates.")
 
-    try:
-        formatted_prompt = template.format(**sample_data)
-    except KeyError as e:
-        st.error(f"Error formatting prompt for metric '{metric}', sample/pair {sample_id}: Missing key {e}. Check template placeholders and 'required_attributes'.")
-        formatted_prompt = "[Error formatting prompt]"
-    except Exception as e:
-        st.error(f"An unexpected error occurred during prompt formatting for metric '{metric}', sample/pair {sample_id}: {e}")
-        formatted_prompt = "[Error formatting prompt]"
-
     return formatted_prompt, rating_scale
+
 
 # --- Adapted save_rating ---
 def save_rating(sample_id, metric, rating, it_background, is_pairwise, swap_options, supabase_client=None):
@@ -574,7 +676,7 @@ try:
         )
         st.stop()
     # --- VERSION CHECK END ---
-    
+
 except FileNotFoundError as e:
     st.error(f"Error: Validation file not found: {e.filename}. Please ensure both {VALIDATION_FILE_A} and {VALIDATION_FILE_B} exist.")
     st.stop()
