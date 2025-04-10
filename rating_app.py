@@ -332,6 +332,33 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
     return [entity for entity, _ in relevant_entities]
 
 
+# --- Helper function for formatting history ---
+def format_chat_history(history_list):
+    """Formats a list of chat turns into a readable HTML string."""
+    formatted_lines = []
+    for turn in history_list:
+        role = turn.get('role', 'unknown').lower()
+        # Basic HTML escaping for content to prevent accidental tag injection
+        # You might want a more robust library like `bleach` if content can be complex
+        import html
+        content = html.escape(turn.get('content', '[missing content]'))
+
+        prefix = "Unbekannt" # Default prefix
+        if role == 'user':
+            prefix = "Nutzer"
+        elif role == 'assistant' or role == 'bot': # Handle common variations
+            prefix = "Bot"
+        elif role == 'system':
+             prefix = "System" # Or decide to skip system messages
+
+        # Only add lines with known roles or if you want to show unknown ones
+        if prefix != "Unbekannt" or role == 'unknown': # Adjust this condition if needed
+            # Use bold for the prefix for better visual separation
+            formatted_lines.append(f"<b>{prefix}:</b> {content}")
+
+    # Join lines with the HTML break tag
+    return "<br>".join(formatted_lines)
+
 # --- Adapted generate_prompt ---
 def generate_prompt(entity, metric, swap_options=False):
     if metric not in evaluation_templates:
@@ -359,11 +386,11 @@ def generate_prompt(entity, metric, swap_options=False):
                 sample_data[attr] = sample_a.get(attr) or sample_b.get(attr) or f"[Attribute '{attr}' not found]"
             # Attributes specific to sample A/B (like answer, history)
             elif attr.endswith("_a"):
-                base_attr = attr[:-2] # e.g., "answer" from "answer_a"
+                base_attr = attr[:-2] # e.g., "history" from "history_a"
                 source_sample = sample_b if swap_options else sample_a
                 if base_attr == "history": # Special handling for history
-                     formatted_history = "\n".join([f"{turn.get('role', 'unknown')}: {turn.get('content', '')}" for turn in source_sample.get("history", [])])
-                     sample_data[attr] = formatted_history
+                     # <<< Use the new formatting function here >>>
+                     sample_data[attr] = format_chat_history(source_sample.get("history", []))
                 elif base_attr in source_sample:
                     sample_data[attr] = source_sample[base_attr]
                 else:
@@ -373,8 +400,8 @@ def generate_prompt(entity, metric, swap_options=False):
                 base_attr = attr[:-2]
                 source_sample = sample_a if swap_options else sample_b
                 if base_attr == "history": # Special handling for history
-                     formatted_history = "\n".join([f"{turn.get('role', 'unknown')}: {turn.get('content', '')}" for turn in source_sample.get("history", [])])
-                     sample_data[attr] = formatted_history
+                     # <<< Use the new formatting function here >>>
+                     sample_data[attr] = format_chat_history(source_sample.get("history", []))
                 elif base_attr in source_sample:
                     sample_data[attr] = source_sample[base_attr]
                 else:
@@ -394,11 +421,11 @@ def generate_prompt(entity, metric, swap_options=False):
         sample = entity
         sample_id = sample.get("id", "N/A")
         for attr in required_attributes:
-            if attr in sample:
-                sample_data[attr] = sample[attr]
-            elif attr == "history" and "history" in sample:
-                formatted_history = "\n".join([f"{turn.get('role', 'unknown')}: {turn.get('content', '')}" for turn in sample["history"]])
-                sample_data[attr] = formatted_history
+            if attr == "history" and "history" in sample:
+                 # <<< Use the new formatting function here >>>
+                 sample_data[attr] = format_chat_history(sample.get("history", []))
+            elif attr in sample:
+                 sample_data[attr] = sample[attr]
             # Add other specific handlers (like retrieved_contexts) if needed
             # elif attr == "retrieved_contexts" and "retrieved_contexts" in sample:
             #     sample_data[attr] = "\n".join(sample["retrieved_contexts"])
@@ -419,7 +446,6 @@ def generate_prompt(entity, metric, swap_options=False):
         formatted_prompt = "[Error formatting prompt]"
 
     return formatted_prompt, rating_scale
-
 
 # --- Adapted save_rating ---
 def save_rating(sample_id, metric, rating, it_background, is_pairwise, swap_options, supabase_client=None):
@@ -525,6 +551,30 @@ try:
         validation_sets['a'] = json.load(f)
     with open(VALIDATION_FILE_B, "r", encoding="utf-8") as f:
         validation_sets['b'] = json.load(f)
+
+    # --- VERSION CHECK START ---
+    version_a = validation_sets['a'].get("version")
+    version_b = validation_sets['b'].get("version")
+
+    if version_a is None or version_b is None:
+        st.error(
+            f"Fehler: 'version'-Schlüssel fehlt in einer oder beiden Validierungsdateien. "
+            f"({VALIDATION_FILE_A}: {'vorhanden' if version_a is not None else 'fehlt'}, "
+            f"{VALIDATION_FILE_B}: {'vorhanden' if version_b is not None else 'fehlt'}). "
+            f"Bitte fügen Sie einen 'version'-Schlüssel hinzu."
+        )
+        st.stop()
+
+    if version_a != version_b:
+        st.error(
+            f"Fehler: Versionskonflikt zwischen Validierungsdateien! "
+            f"'{VALIDATION_FILE_A}' hat Version '{version_a}', "
+            f"aber '{VALIDATION_FILE_B}' hat Version '{version_b}'. "
+            f"Bitte stellen Sie sicher, dass beide Dateien die gleiche Version haben."
+        )
+        st.stop()
+    # --- VERSION CHECK END ---
+    
 except FileNotFoundError as e:
     st.error(f"Error: Validation file not found: {e.filename}. Please ensure both {VALIDATION_FILE_A} and {VALIDATION_FILE_B} exist.")
     st.stop()
@@ -577,7 +627,7 @@ def main():
 
     # --- Initial User Setup ---
     if not st.session_state.app_started:
-        # ... (no changes needed)
+        st.write("Willkommen! Danke für die Teilnahme an dieser Bewertung.")
         st.write("Bitte geben Sie an, ob Sie über einen IT-Hintergrund verfügen.")
         it_background_choice = st.radio(
             "IT-Hintergrund:",
@@ -592,13 +642,18 @@ def main():
             else:
                 st.session_state.it_background = it_background_choice
                 st.session_state.app_started = True
-                st.session_state.round_over = True
+                # --- MODIFICATION START ---
+                # Directly start the first round here instead of just setting round_over=True
+                start_new_round()
+                # Rerun to reflect the state changes from start_new_round()
                 st.rerun()
-        return
+                # --- MODIFICATION END ---
+        return # Important: Still return here to prevent rest of main() executing on this initial run
 
     # --- Round Management ---
+    # This block will now be skipped on the rerun immediately after clicking "Start"
+    # because start_new_round() sets round_over to False (if samples are found)
     if st.session_state.round_over:
-        # ... (no changes needed)
         if st.session_state.round_count > 0:
              st.success(f"Runde {st.session_state.round_count} abgeschlossen. Danke für Ihre Bewertungen!")
         if st.button("Nächste Runde starten", key="next_round_button"):
@@ -607,15 +662,20 @@ def main():
                  st.rerun()
         return
 
+    # ... (rest of the main function remains the same) ...
     # Check for inconsistent state
     current_entity_for_display = st.session_state.current_sample_pair if st.session_state.is_pairwise else st.session_state.current_sample
     if not current_entity_for_display and not st.session_state.round_over:
          st.warning("Zustandsfehler: Kein aktuelles Sample/Paar. Starte neue Runde.")
+         # Attempt to recover by starting a new round
          start_new_round()
          if not st.session_state.round_over:
              st.rerun()
          else:
-             return
+             # If starting a new round still results in round_over, stop here
+             st.info("Keine weiteren Aufgaben verfügbar.") # Or a more appropriate message
+             return # Stop execution for this run
+
 
     # --- Display Current Entity (Sample or Pair) ---
     st.markdown(

@@ -2,20 +2,20 @@
     "version": "1.0",
     "evaluation_criteria": {
       "singleturn":{
-        "specific": ["faithfulness", "quality", "quality_pairwise"],
-        "seminar-search": ["quality", "quality_pairwise"],
-        "handoff": ["quality", "quality_pairwise"],
-        "out-of-scope": ["quality", "quality_pairwise"],
-        "abstract": ["quality", "quality_pairwise"],
-        "bad-intentions": ["quality", "quality_pairwise"]
+        "specific": ["faithfulness", "answer_relevance", "answer_correctness", "context_relevance", "quality_pairwise"],
+        "seminar-search": ["faithfulness", "answer_relevance", "context_relevance", "quality_pairwise"],
+        "handoff": ["handoff", "quality_pairwise"],
+        "out-of-scope": ["purpose", "quality_pairwise"],
+        "abstract": ["answer_relevance", "context_relevance", "quality_pairwise"],
+        "bad-intentions": ["purpose", "quality_pairwise"]
       },
       "multiturn": {
-        "specific": ["multi_turn_quality", "multi_turn_quality_pairwise"],
-        "seminar-search": ["multi_turn_quality", "multi_turn_quality_pairwise"],
-        "handoff": ["multi_turn_quality", "multi_turn_quality_pairwise"],
-        "out-of-scope": ["multi_turn_quality", "multi_turn_quality_pairwise"],
-        "abstract": ["multi_turn_quality", "multi_turn_quality_pairwise"],
-        "bad-intentions": ["multi_turn_quality", "multi_turn_quality_pairwise"]
+        "specific": ["multiturn_faithfulness", "multiturn_answer_relevance", "multiturn_answer_correctness", "multiturn_context_relevance", "multi_turn_quality_pairwise"],
+        "seminar-search": ["multiturn_faithfulness", "multiturn_answer_relevance", "multiturn_context_relevance", "multi_turn_quality_pairwise"],
+        "handoff": ["multiturn_handoff", "multi_turn_quality_pairwise"],
+        "out-of-scope": ["multiturn_purpose", "multi_turn_quality_pairwise"],
+        "abstract": ["multiturn_answer_relevance", "multiturn_context_relevance", "multi_turn_quality_pairwise"],
+        "bad-intentions": ["multiturn_purpose", "multi_turn_quality_pairwise"]
       }
     },
     "singleturn": {
