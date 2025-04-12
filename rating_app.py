@@ -12,7 +12,7 @@ DATA_FILE = "ratings_data.json"
 VALIDATION_FILE_A = "validationset.json"
 # --- Added second validation file constant ---
 VALIDATION_FILE_B = "validationset-b.json"
-MODE = "local"  # supported modes: "local", "supabase"
+MODE = "supabase"  # supported modes: "local", "supabase"
 
 # --- Define Pairwise Metrics ---
 PAIRWISE_METRICS = {"quality_pairwise", "multiturn_quality_pairwise"}
