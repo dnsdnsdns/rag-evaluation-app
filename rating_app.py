@@ -4,18 +4,19 @@ import random
 import os
 import supabase
 import html
+import markdown
 from collections import defaultdict
 from prompt_templates import evaluation_templates, general_intro_prompt
 
 DATA_FILE = "ratings_data.json"
-VALIDATION_FILE_A = "validationset-test.json"
+VALIDATION_FILE_A = "validationset.json"
 # --- Added second validation file constant ---
-VALIDATION_FILE_B = "validationset-test-b.json"
+VALIDATION_FILE_B = "validationset-b.json"
 MODE = "local"  # supported modes: "local", "supabase"
 
 # --- Define Pairwise Metrics ---
-#PAIRWISE_METRICS = {"quality_pairwise", "multiturn_quality_pairwise"}
-PAIRWISE_METRICS = {}
+PAIRWISE_METRICS = {"quality_pairwise", "multiturn_quality_pairwise"}
+#PAIRWISE_METRICS = {}
 
 # --- Helper Functions ---
 
@@ -175,13 +176,11 @@ def save_ratings(ratings, supabase_client):
 def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it_background):
     ratings_key = "Experten" if it_background == "Ja" else "Crowd"
 
-    # 1. Get all possible metrics (single, multi, pairwise)
+    # 1. Get all possible metrics
     all_metrics = set()
-    # Add single/multi-turn metrics from validation_data_a (structure assumed same as _b)
     for turn_type, criteria in validation_data_a.get("evaluation_criteria", {}).items():
         for category, metrics in criteria.items():
             all_metrics.update(metrics)
-    # Add pairwise metrics explicitly
     all_metrics.update(PAIRWISE_METRICS)
 
     if not all_metrics:
@@ -189,8 +188,8 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
         return None
 
     # 2. Map samples/pairs to their applicable metrics
-    sample_metrics_map = defaultdict(list) # For single/multi-turn
-    pair_metrics_map = defaultdict(list)   # For pairwise
+    sample_metrics_map = defaultdict(list)
+    pair_metrics_map = defaultdict(list)
 
     # Process validation_data_a for single/multi-turn metrics
     for turn_type in ["singleturn", "multiturn"]:
@@ -202,17 +201,27 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
                     if sample_id:
                         retrieved_contexts = sample.get('retrieved_contexts')
                         has_empty_context = not retrieved_contexts # True if None or empty list
+                        history = sample.get('history') # Check for history
+                        has_history = isinstance(history, list) and len(history) > 0
 
                         for metric in category_metrics:
                             if metric in PAIRWISE_METRICS:
-                                continue # Handle pairwise later
+                                continue
 
-                            # --- ADDED CHECK ---
-                            # Skip if metric requires 'context' but sample has none
-                            metric_requires_context = 'context' in evaluation_templates.get(metric, {}).get('required_attributes', [])
-                            if metric_requires_context and has_empty_context:
-                                continue # Skip this sample for this metric
-                            # --- END CHECK ---
+                            metric_config = evaluation_templates.get(metric, {})
+                            metric_req_attrs = metric_config.get('required_attributes', [])
+
+                            # --- MODIFIED CHECK for skipping ---
+                            is_context_relevance_metric = metric in ["context_relevance", "multiturn_context_relevance"]
+                            metric_requires_history = 'history' in metric_req_attrs
+
+                            # Skip if context relevance metric requires context but sample has none
+                            if is_context_relevance_metric and has_empty_context:
+                                continue
+                            # Skip if metric requires history but sample has none
+                            if metric_requires_history and not has_history:
+                                continue
+                            # --- END MODIFIED CHECK ---
 
                             sample_metrics_map[sample_id].append(metric)
 
@@ -221,8 +230,13 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
     ids_b = {s['id'] for turn_type in validation_data_b if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_b[turn_type] for s in validation_data_b[turn_type][cat]}
     common_ids = ids_a.intersection(ids_b)
 
+    # Pre-fetch samples to avoid repeated lookups
+    samples_a_dict = {s['id']: s for turn_type in validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_a[turn_type] for s in validation_data_a[turn_type][cat]}
+
     for sample_id in common_ids:
-        # Determine turn type for the pair (assuming consistent across files)
+        sample_a = samples_a_dict.get(sample_id)
+        if not sample_a: continue # Should not happen with common_ids, but safe check
+
         turn_type_a = None
         category_a = None
         for tt in ["singleturn", "multiturn"]:
@@ -235,37 +249,55 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
              if turn_type_a: break
 
         if turn_type_a and category_a:
-             # Get applicable pairwise metrics for this category
              category_metrics = validation_data_a.get("evaluation_criteria", {}).get(turn_type_a, {}).get(category_a, [])
              applicable_pairwise = [m for m in category_metrics if m in PAIRWISE_METRICS]
-             if applicable_pairwise:
-                 pair_metrics_map[sample_id].extend(applicable_pairwise)
 
+             if applicable_pairwise:
+                 # Check context/history requirements for pairwise metrics if needed
+                 retrieved_contexts_a = sample_a.get('retrieved_contexts')
+                 pair_has_empty_context = not retrieved_contexts_a
+                 history_a = sample_a.get('history')
+                 pair_has_history = isinstance(history_a, list) and len(history_a) > 0
+
+                 for metric in applicable_pairwise:
+                     metric_config = evaluation_templates.get(metric, {})
+                     metric_req_attrs = metric_config.get('required_attributes', [])
+                     metric_requires_history = 'history' in metric_req_attrs
+                     # Add context check if any pairwise metric requires it and might lack it
+                     # is_context_relevance_metric = metric in [...] # If pairwise context relevance exists
+
+                     # Skip if metric requires history but pair lacks it
+                     if metric_requires_history and not pair_has_history:
+                         continue
+                     # Add context skip logic if needed for pairwise
+
+                     pair_metrics_map[sample_id].append(metric) # Use append instead of extend
 
     # 3. Calculate vote counts per metric
     metric_vote_counts = defaultdict(list)
-
-    # Ensure the ratings structure exists
     if ratings_key not in ratings: ratings[ratings_key] = {}
 
-    # Count votes for single/multi-turn metrics
     for sample_id, metrics in sample_metrics_map.items():
         for metric in metrics:
-            vote_count = len(ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", []))
+            # Handle potential tuple format for context relevance votes in local mode
+            votes_data = ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", [])
+            if metric in ["context_relevance", "multiturn_context_relevance"] and MODE == "local":
+                 # Count the number of tuples (each tuple is one context rating)
+                 vote_count = len([v for v in votes_data if isinstance(v, (tuple, list))]) # Count tuples/lists
+            else:
+                 vote_count = len(votes_data)
             metric_vote_counts[metric].append(vote_count)
 
-    # Count votes for pairwise metrics
     for sample_id, metrics in pair_metrics_map.items():
         for metric in metrics:
-            # Vote count for a pair is stored under the shared sample_id and the pairwise metric
             vote_count = len(ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", []))
             metric_vote_counts[metric].append(vote_count)
 
     # 4. Calculate average coverage per metric
     metric_coverage = {}
     for metric in all_metrics:
-        vote_counts = metric_vote_counts.get(metric, [])
-        num_entities = 0 # Number of samples or pairs this metric applies to
+        vote_counts_list = metric_vote_counts.get(metric, [])
+        num_entities = 0
 
         if metric in PAIRWISE_METRICS:
             num_entities = sum(1 for sample_id in pair_metrics_map if metric in pair_metrics_map[sample_id])
@@ -273,16 +305,34 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
             num_entities = sum(1 for sample_id in sample_metrics_map if metric in sample_metrics_map[sample_id])
 
         if num_entities > 0:
-            metric_coverage[metric] = sum(vote_counts) / num_entities if vote_counts else 0
+            # For context relevance, sum represents total context chunks rated, not samples
+            if metric in ["context_relevance", "multiturn_context_relevance"]:
+                 # Average coverage = total context ratings / number of samples applicable
+                 total_context_ratings = sum(vote_counts_list)
+                 metric_coverage[metric] = total_context_ratings / num_entities if num_entities > 0 else 0
+            else:
+                 # Average coverage = total votes / number of samples/pairs applicable
+                 total_votes = sum(vote_counts_list)
+                 metric_coverage[metric] = total_votes / num_entities if num_entities > 0 else 0
         else:
-            metric_coverage[metric] = 0 # Metric defined but no samples/pairs apply
+            metric_coverage[metric] = 0
 
     # 5. Find the metric with the lowest coverage
     if not metric_coverage:
-        return random.choice(list(all_metrics)) if all_metrics else None
+        # Filter out metrics that have no applicable samples/pairs before random choice
+        applicable_metrics = [m for m in all_metrics if (m in PAIRWISE_METRICS and any(m in metrics for metrics in pair_metrics_map.values())) or \
+                                                        (m not in PAIRWISE_METRICS and any(m in metrics for metrics in sample_metrics_map.values()))]
+        return random.choice(applicable_metrics) if applicable_metrics else None
+
 
     min_coverage = min(metric_coverage.values())
     lowest_coverage_metrics = [m for m, cov in metric_coverage.items() if cov == min_coverage]
+
+    # Filter out metrics with no applicable entities before choosing
+    lowest_coverage_metrics = [m for m in lowest_coverage_metrics if metric_coverage[m] >= 0 and \
+                               ((m in PAIRWISE_METRICS and any(m in metrics for metrics in pair_metrics_map.values())) or \
+                                (m not in PAIRWISE_METRICS and any(m in metrics for metrics in sample_metrics_map.values())))]
+
 
     return random.choice(lowest_coverage_metrics) if lowest_coverage_metrics else None
 
@@ -290,19 +340,17 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
 # --- Adapted get_samples_for_metric ---
 def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings, it_background):
     ratings_key = "Experten" if it_background == "Ja" else "Crowd"
-    relevant_entities = [] # Can store single samples or pairs
-
-    # Ensure the ratings structure exists
+    relevant_entities = []
     if ratings_key not in ratings: ratings[ratings_key] = {}
 
-    # --- ADDED: Get required attributes for the metric ---
     metric_config = evaluation_templates.get(metric, {})
     required_attributes = metric_config.get('required_attributes', [])
-    metric_strictly_requires_context = 'context' in required_attributes
-    # --- END ADDED ---
+    # --- MODIFIED CHECK ---
+    is_context_relevance_metric = metric in ["context_relevance", "multiturn_context_relevance"]
+    metric_requires_history = 'history' in required_attributes
+    # --- END MODIFIED CHECK ---
 
     if metric in PAIRWISE_METRICS:
-        # Find pairs with the same ID in both files
         samples_a_dict = {s['id']: s for turn_type in validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_a[turn_type] for s in validation_data_a[turn_type][cat]}
         samples_b_dict = {s['id']: s for turn_type in validation_data_b if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_b[turn_type] for s in validation_data_b[turn_type][cat]}
         common_ids = set(samples_a_dict.keys()).intersection(samples_b_dict.keys())
@@ -311,7 +359,6 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
             sample_a = samples_a_dict[sample_id]
             sample_b = samples_b_dict[sample_id]
 
-            # Check if the metric applies to this pair's category/turn_type
             turn_type_a = None
             category_a = None
             for tt in ["singleturn", "multiturn"]:
@@ -326,15 +373,21 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
             if turn_type_a and category_a:
                  category_metrics = validation_data_a.get("evaluation_criteria", {}).get(turn_type_a, {}).get(category_a, [])
                  if metric in category_metrics:
-                     # --- ADDED CHECK ---
+                     # --- MODIFIED CHECK ---
                      retrieved_contexts_a = sample_a.get('retrieved_contexts')
                      pair_has_empty_context = not retrieved_contexts_a
-                     if metric_strictly_requires_context and pair_has_empty_context:
-                         continue # Skip this pair
-                     # --- END CHECK ---
-                     # Calculate vote count for this pair and metric
+                     history_a = sample_a.get('history')
+                     pair_has_history = isinstance(history_a, list) and len(history_a) > 0
+
+                     # Skip if context relevance metric requires context but pair lacks it (if applicable to pairwise)
+                     # if is_context_relevance_metric and pair_has_empty_context: continue
+                     # Skip if metric requires history but pair lacks it
+                     if metric_requires_history and not pair_has_history:
+                         continue
+                     # --- END MODIFIED CHECK ---
+
                      vote_count = len(ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", []))
-                     relevant_entities.append(((sample_a, sample_b), vote_count)) # Store pair tuple
+                     relevant_entities.append(((sample_a, sample_b), vote_count))
 
     else: # Single/Multi-turn metric
         for turn_type in ["singleturn", "multiturn"]:
@@ -345,48 +398,76 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
                         for sample in samples:
                             sample_id = sample.get("id")
                             if sample_id:
-                                # --- ADDED CHECK ---
+                                # --- MODIFIED CHECK ---
                                 retrieved_contexts = sample.get('retrieved_contexts')
                                 has_empty_context = not retrieved_contexts
-                                if metric_strictly_requires_context and has_empty_context:
-                                    continue # Skip this sample
-                                # --- END CHECK --
-                                vote_count = len(ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", []))
-                                relevant_entities.append((sample, vote_count)) # Store single sample
+                                history = sample.get('history')
+                                has_history = isinstance(history, list) and len(history) > 0
 
-    # Sort entities (samples or pairs) by vote count
+                                if is_context_relevance_metric and has_empty_context:
+                                    continue
+                                if metric_requires_history and not has_history:
+                                    continue
+                                # --- END MODIFIED CHECK ---
+
+                                # Handle potential tuple format for context relevance votes in local mode
+                                votes_data = ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", [])
+                                if metric in ["context_relevance", "multiturn_context_relevance"] and MODE == "local":
+                                     # Use the number of context ratings (tuples) as the sort key
+                                     vote_count = len([v for v in votes_data if isinstance(v, (tuple, list))])
+                                else:
+                                     vote_count = len(votes_data)
+
+                                relevant_entities.append((sample, vote_count))
+
     relevant_entities.sort(key=lambda x: x[1])
-
-    # Return only the sample objects or pair tuples
     return [entity for entity, _ in relevant_entities]
 
+def format_chat_history(history_list):
+    """Formats a list of chat turns into a readable string for Markdown."""
+    formatted_lines = []
+    for turn in history_list:
+        role = turn.get('role', 'unknown').lower()
+        # Get raw content, Markdown conversion will happen later
+        content = turn.get('content', '[missing content]')
+
+        prefix = "Unbekannt"
+        if role == 'user':
+            prefix = "Nutzer"
+        elif role == 'assistant' or role == 'bot':
+            prefix = "Bot"
+        elif role == 'system':
+             prefix = "System" # Or decide to skip system messages
+
+        if prefix != "Unbekannt" or role == 'unknown':
+            # Use Markdown bold for the prefix
+            formatted_lines.append(f"**{prefix}:** {content}")
+
+    # Join lines with double newlines for paragraph breaks in Markdown
+    return "\n\n".join(formatted_lines)
+
+# --- Helper function for formatting contexts (Keep using html.escape and pre-wrap) ---
 def format_contexts_as_accordion(sources, full_contexts):
-    # ... (keep existing implementation) ...
     """Formats lists of context sources and full texts into an HTML accordion."""
-    # Basic validation (length check is also done before calling, but good practice)
     if not sources or not full_contexts or len(sources) != len(full_contexts):
-        # This function should ideally only be called with valid, non-empty lists now
-        # due to upstream filtering and checks in generate_prompt.
-        # If it's still called with invalid data, log an error.
         st.error("Internal Error: format_contexts_as_accordion called with invalid/empty data.")
         return "<p><em>[Interner Fehler bei der Anzeige des Kontexts.]</em></p>"
 
     accordion_html = '<div class="context-accordion-container"><h4>Verfügbarer Kontext:</h4>'
 
-    # Iterate using index, assuming lists correspond
     for i in range(len(sources)):
         source = sources[i]
         full_context = full_contexts[i]
 
-        # Escape content for safe HTML rendering
         escaped_source = html.escape(str(source))
-        escaped_content = html.escape(str(full_context)).replace('\n', '<br>') # Preserve line breaks
+        # Escape content but keep newlines for CSS pre-wrap
+        escaped_content = html.escape(str(full_context))
 
         accordion_html += f"""
         <details class="context-details">
             <summary class="context-summary">Kontext {i+1}: {escaped_source}</summary>
             <div class="context-content-body">
-                <p>{escaped_content}</p>
+                <p style="white-space: pre-wrap; word-wrap: break-word;">{escaped_content}</p>
             </div>
         </details>
         """
@@ -394,326 +475,343 @@ def format_contexts_as_accordion(sources, full_contexts):
     accordion_html += '</div>'
     return accordion_html
 
-# --- Helper function for formatting history ---
-def format_chat_history(history_list):
-    # ... (keep existing implementation) ...
-    """Formats a list of chat turns into a readable HTML string."""
-    formatted_lines = []
-    for turn in history_list:
-        role = turn.get('role', 'unknown').lower()
-        # Basic HTML escaping for content to prevent accidental tag injection
-        # You might want a more robust library like `bleach` if content can be complex
-        content = html.escape(turn.get('content', '[missing content]'))
-
-        prefix = "Unbekannt" # Default prefix
-        if role == 'user':
-            prefix = "Nutzer"
-        elif role == 'assistant' or role == 'bot': # Handle common variations
-            prefix = "Bot"
-        elif role == 'system':
-             prefix = "System" # Or decide to skip system messages
-
-        # Only add lines with known roles or if you want to show unknown ones
-        if prefix != "Unbekannt" or role == 'unknown': # Adjust this condition if needed
-            # Use bold for the prefix for better visual separation
-            formatted_lines.append(f"<b>{prefix}:</b> {content}")
-
-    # Join lines with the HTML break tag
-    return "<br>".join(formatted_lines)
-
-
 # --- Adapted generate_prompt ---
 def generate_prompt(entity, metric, swap_options=False):
+    # --- (Initial checks remain the same) ---
     if metric not in evaluation_templates:
-        raise ValueError(f"Metric '{metric}' not found in evaluation_templates.")
+        st.error(f"Metric '{metric}' not found in prompt templates.")
+        return "[Fehler: Metrik nicht definiert]", []
 
     template_config = evaluation_templates[metric]
-    template = template_config["prompt"]
+    instruction_text = template_config["prompt"] # Base instruction text
     required_attributes = template_config["required_attributes"]
     rating_scale = template_config["rating_scale"]
 
-    sample_data = {} # For formatting the base instruction template
-    content_a = "[Antwort A nicht gefunden]" # Default content for option A answer
-    content_b = "[Antwort B nicht gefunden]" # Default content for option B answer
     missing_attrs = []
-    formatted_shared_history = None # To store formatted shared history if applicable
-    context_accordion_html = "" # Initialize context HTML
+    html_parts = [] # List to build HTML sections
 
     is_pairwise = isinstance(entity, tuple) and len(entity) == 2
-
-    # --- Determine the primary sample to extract potential contexts from ---
     primary_sample = entity[0] if is_pairwise else entity
-    sample_id = primary_sample.get("id", "N/A") # Use primary sample ID
+    sample_id = primary_sample.get("id", "N/A")
 
-    # --- Generate Context Accordion - CONDITIONALLY (Updated Logic) ---
-    # 1. Check if the metric configuration requires context display
-    metric_strictly_requires_context = 'context' in required_attributes
-    metric_potentially_displays_context = 'retrieved_contexts' in required_attributes or 'retrieved_contexts_full' in required_attributes
+    # --- Markdown Conversion Helper ---
+    # Use 'extra' which includes nl2br, fenced_code, tables, auto-linking, etc.
+    # Explicitly add 'linkify=True' if using a version where 'extra' doesn't force it
+    # Or use a dedicated extension like 'markdown_linkify.LinkifyExtension' if needed,
+    # but 'extra' usually handles standard URLs.
+    md_converter = lambda text: markdown.markdown(str(text), extensions=['extra']) # Ensure input is string
 
-    # 2. Check if the sample data has the required context lists
-    sources_list = primary_sample.get('retrieved_contexts')
-    full_contexts_list = primary_sample.get('retrieved_contexts_full')
+    # --- SPECIAL HANDLING FOR CONTEXT RELEVANCE METRICS ---
+    if metric in ["context_relevance", "multiturn_context_relevance"]:
+        sample = entity
+        query = sample.get("query")
+        sources_list = sample.get('retrieved_contexts')
+        full_contexts_list = sample.get('retrieved_contexts_full')
+        history_list = sample.get("history", []) if metric == "multiturn_context_relevance" else None
 
-    context_keys_present = isinstance(sources_list, list) and isinstance(full_contexts_list, list)
-    context_lists_match = context_keys_present and len(sources_list) == len(full_contexts_list)
-    context_is_empty = not sources_list if context_keys_present else True # Treat missing keys as empty
+        # Basic Data Checks (keep as is)
+        if not query: missing_attrs.append('query')
+        if not isinstance(sources_list, list) or not isinstance(full_contexts_list, list) or len(sources_list) != len(full_contexts_list):
+            st.error(f"Invalid or missing context data for sample {sample_id} and metric '{metric}'.")
+            return "[Fehler: Ungültige Kontextdaten]", []
+        if metric == "multiturn_context_relevance" and not history_list:
+             st.error(f"Internal Error: History missing for sample {sample_id} and metric '{metric}'.")
+             missing_attrs.append('history (required but missing)')
+             return "[Fehler: Verlauf fehlt]", []
 
+        # --- Build HTML for Context Relevance Rating ---
+        # Add History (if applicable) - Render as Markdown
+        if history_list:
+            raw_history = format_chat_history(history_list)
+            history_html = md_converter(raw_history)
+            html_parts.append(f'<div class="history-section"><h4>Gesprächsverlauf:</h4><div class="markdown-content">{history_html}</div></div>')
 
-    sample_has_valid_contexts = (
-        isinstance(sources_list, list) and
-        isinstance(full_contexts_list, list) and
-        len(sources_list) > 0 and # Ensure lists are not empty
-        len(sources_list) == len(full_contexts_list) # Ensure lists have same length
-    )
+        # Add Query - Keep as plain text escaped
+        if query:
+             html_parts.append(f'<div class="query-section"><h4>Frage:</h4><p>{html.escape(str(query))}</p></div>') # Ensure string
+        else:
+             html_parts.append('<div class="query-section"><h4>Frage:</h4><p>[Frage fehlt]</p></div>')
 
-# --- Generate Context Accordion HTML ---
-    if metric_potentially_displays_context:
-        if context_lists_match and not context_is_empty:
-            # Valid, non-empty context available
+        # Add Context Accordion (Keep using pre-wrap for context content)
+        if not sources_list:
+             html_parts.append("<p><i>Für diese Anfrage wurden keine Kontexte abgerufen. Es gibt nichts zu bewerten.</i></p>")
+             rating_scale = []
+        else:
             context_accordion_html = format_contexts_as_accordion(sources_list, full_contexts_list)
+            html_parts.append(context_accordion_html)
+
+        # --- Combine and Return for Context Relevance ---
+        # ***** CSS (Ensure box styles are present) *****
+        styles = """
+        <style>
+        /* Instruction handled separately */
+        /* White background and border for sections */
+        .history-section, .query-section, .context-accordion-container, .reference-answer-section, .answer-section {
+            margin-bottom: 15px; padding: 12px; border: 1px solid #e0e0e0; border-radius: 6px; background-color: #ffffff;
+        }
+        /* Headers */
+        .history-section h4, .query-section h4, .reference-answer-section h4, .answer-section h4, .context-accordion-container h4 {
+            margin-top: 0; margin-bottom: 8px; font-size: 1.05em; color: #444; border-bottom: 1px solid #eee; padding-bottom: 5px;
+        }
+        /* Query plain text */
+        .query-section p { margin-bottom: 0; line-height: 1.5; word-wrap: break-word; } /* Added word-wrap */
+
+        /* Markdown Content Styling */
+        .markdown-content { line-height: 1.5; word-wrap: break-word; }
+        .markdown-content p:last-child { margin-bottom: 0; }
+        .markdown-content p { margin-bottom: 0.75em; }
+        .markdown-content ul, .markdown-content ol { padding-left: 25px; margin-bottom: 0.75em; }
+        .markdown-content li { margin-bottom: 0.25em; }
+        .markdown-content code { background-color: #f0f0f0; padding: 0.2em 0.4em; border-radius: 3px; font-size: 0.9em; word-wrap: break-word; }
+        .markdown-content pre { background-color: #f8f9fa; padding: 10px; border-radius: 4px; border: 1px solid #e9ecef; overflow-x: auto; }
+        .markdown-content pre code { background-color: transparent; padding: 0; border-radius: 0; font-size: 0.95em; white-space: pre; }
+        .markdown-content blockquote { border-left: 3px solid #ccc; padding-left: 10px; margin-left: 0; color: #666; }
+        .markdown-content table { border-collapse: collapse; margin-bottom: 1em; width: auto; }
+        .markdown-content th, .markdown-content td { border: 1px solid #ddd; padding: 6px 10px; }
+        .markdown-content th { background-color: #f2f2f2; font-weight: bold; }
+        /* Ensure links are styled visibly */
+        .markdown-content a { color: #007bff; text-decoration: underline; }
+        .markdown-content a:hover { color: #0056b3; }
+
+        /* Context Accordion Specific Styles */
+        /* .context-accordion-container already styled above */
+        .context-details { border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px; background-color: #fff; }
+        .context-summary { cursor: pointer; padding: 10px 15px 10px 35px; font-weight: 500; color: #007bff; list-style: none; position: relative; background-color: #f8f9fa; border-bottom: 1px solid #ddd; }
+        .context-details[open] > .context-summary { border-bottom: 1px solid #007bff; }
+        .context-summary::-webkit-details-marker { display: none; }
+        .context-summary::before { content: '+'; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-weight: bold; color: #6c757d; margin-right: 8px; font-size: 1.1em; transition: transform 0.2s; }
+        .context-details[open] > .context-summary::before { content: '−'; transform: translateY(-50%) rotate(45deg); }
+        .context-content-body { padding: 15px 15px 15px 35px; font-size: 0.95em; color: #333; line-height: 1.6; border-top: 1px solid #eee; }
+        .context-content-body p { margin-top: 0; margin-bottom: 10px; white-space: pre-wrap; word-wrap: break-word; } /* Keep pre-wrap for context */
+        .context-rating-placeholder { margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 15px; }
+        </style>
+        """
+        # ***** END CSS *****
+        formatted_prompt = styles + "\n".join(html_parts)
+        return formatted_prompt, rating_scale
+        # --- END SPECIAL HANDLING FOR CONTEXT RELEVANCE ---
+
+
+    # --- GENERAL LOGIC FOR OTHER METRICS ---
+
+    # Instruction is handled outside this function now
+
+    # 2. Add History (if required) - Render as Markdown
+    if "history" in required_attributes:
+        history_list = primary_sample.get("history", [])
+        if history_list:
+            raw_history = format_chat_history(history_list)
+            history_html = md_converter(raw_history)
+            html_parts.append(f'<div class="history-section"><h4>Gesprächsverlauf:</h4><div class="markdown-content">{history_html}</div></div>')
+        else:
+            # Keep placeholder for missing history
+            html_parts.append('<div class="history-section"><h4>Gesprächsverlauf:</h4><p><i>(Kein Verlauf vorhanden oder zutreffend)</i></p></div>')
+            if not any(isinstance(t, dict) and t.get('role') and t.get('content') for t in history_list):
+                 missing_attrs.append("history (required but missing/invalid)")
+
+    # 3. Add Context Accordion (if required and available) - Keep using pre-wrap
+    metric_displays_context = 'retrieved_contexts' in required_attributes or 'retrieved_contexts_full' in required_attributes
+    if metric_displays_context:
+        sources_list = primary_sample.get('retrieved_contexts')
+        full_contexts_list = primary_sample.get('retrieved_contexts_full')
+        context_keys_present = isinstance(sources_list, list) and isinstance(full_contexts_list, list)
+        context_lists_match = context_keys_present and len(sources_list) == len(full_contexts_list)
+        context_is_empty = not sources_list if context_keys_present else True
+
+        if context_lists_match and not context_is_empty:
+            context_accordion_html = format_contexts_as_accordion(sources_list, full_contexts_list)
+            html_parts.append(context_accordion_html)
         elif context_is_empty:
-            # Context is empty (or keys missing)
-            if metric_strictly_requires_context:
-                # This case should ideally be filtered out before calling generate_prompt.
-                # If it occurs, it indicates a potential logic error upstream.
-                st.error(f"Internal Error: Sample {sample_id} reached prompt generation for metric '{metric}' which requires context, but context is missing.")
-                context_accordion_html = "<p><em>[Fehler: Kontext erforderlich, aber nicht vorhanden.]</em></p>"
-                missing_attrs.append('context (required but missing)')
-            else:
-                # Context is not strictly required, but display is potential, and it's empty. Show the specific message.
-                context_accordion_html = """
-                <div class="context-accordion-container">
-                    <h4>Verfügbarer Kontext:</h4>
-                    <p><em>Für diese Anfrage steht kein Kontext zur Verfügung.</em></p>
-                </div>
-                """
-        else: # Context keys present but lists don't match length
-            st.warning(f"Context data invalid/inconsistent for sample {sample_id}. Check 'retrieved_contexts' and 'retrieved_contexts_full' lengths.")
-            context_accordion_html = "<p><em>[Fehler bei der Anzeige des Kontexts: Inkonsistente Daten.]</em></p>"
-            # Log if strictly required, otherwise just show the message
-            if metric_strictly_requires_context:
-                 missing_attrs.append('context (inconsistent data)')
+             # Keep placeholder for empty context
+             html_parts.append('<div class="context-accordion-container"><h4>Verfügbarer Kontext:</h4><p><em>Für diese Anfrage steht kein Kontext zur Verfügung.</em></p></div>')
+             metric_strictly_requires_context = evaluation_templates.get(metric, {}).get("strictly_requires_context", False)
+             if metric_strictly_requires_context: missing_attrs.append('context (required but missing)')
+        else:
+            # Keep warning for inconsistent context
+            st.warning(f"Context data invalid/inconsistent for sample {sample_id}. Check 'retrieved_contexts' and 'retrieved_contexts_full'.")
+            html_parts.append('<div class="context-accordion-container"><h4>Verfügbarer Kontext:</h4><p><em>[Fehler bei der Anzeige des Kontexts: Inkonsistente Daten.]</em></p></div>')
+            metric_strictly_requires_context = evaluation_templates.get(metric, {}).get("strictly_requires_context", False)
+            if metric_strictly_requires_context: missing_attrs.append('context (inconsistent data)')
 
+    # 4. Add Query (if required) - Keep as plain text escaped
+    if "query" in required_attributes:
+        query = primary_sample.get("query")
+        if query:
+            html_parts.append(f'<div class="query-section"><h4>Frage:</h4><p>{html.escape(str(query))}</p></div>') # Ensure string
+        else:
+            html_parts.append('<div class="query-section"><h4>Frage:</h4><p>[Frage nicht gefunden]</p></div>')
+            missing_attrs.append("query")
+
+    # 5. Add Reference Answer (if required) - Render as Markdown
+    if "reference_answer" in required_attributes:
+        reference_answer = primary_sample.get("reference_answer")
+        if reference_answer is not None:
+            ref_answer_html = md_converter(reference_answer)
+            html_parts.append(f'<div class="reference-answer-section"><h4>Referenzantwort:</h4><div class="markdown-content">{ref_answer_html}</div></div>')
+        else:
+            html_parts.append('<div class="reference-answer-section"><h4>Referenzantwort:</h4><p>[Referenzantwort nicht gefunden]</p></div>')
+            missing_attrs.append("reference_answer")
+
+    # 6. Add Answer(s) - Pairwise or Single - Render as Markdown
     if is_pairwise:
-        # --- PAIRWISE LOGIC ---
         sample_a_orig, sample_b_orig = entity
-        # sample_id already extracted from primary_sample (sample_a_orig)
-
-        # Determine which sample provides content for A and B based on swap_options
         sample_for_a = sample_b_orig if swap_options else sample_a_orig
         sample_for_b = sample_a_orig if swap_options else sample_b_orig
 
-        # 1. Handle Shared History (if required by the metric)
-        if "history" in required_attributes:
-            history_list = sample_a_orig.get("history", []) # Get history from sample_a
-            if history_list:
-                formatted_shared_history = format_chat_history(history_list)
-                sample_data["history"] = formatted_shared_history
-            else:
-                missing_attrs.append("history")
-                sample_data["history"] = "[Chat-Verlauf nicht gefunden]"
+        attr_a_name = next((attr for attr in required_attributes if attr.endswith('_a')), 'answer_a')
+        attr_b_name = next((attr for attr in required_attributes if attr.endswith('_b')), 'answer_b')
+        base_attr_a = attr_a_name[:-2]
+        base_attr_b = attr_b_name[:-2]
 
-        # 2. Populate other base template data (e.g., query, if needed)
-        #    Exclude 'history', 'context', and attributes ending in _a/_b
-        base_template_attrs = [
-            attr for attr in required_attributes
-            if not (attr.endswith('_a') or attr.endswith('_b') or attr == 'history' or attr == 'context')
-        ]
-        for attr in base_template_attrs:
-            # Prioritize value from sample_a_orig if available
-            value = sample_a_orig.get(attr, sample_b_orig.get(attr))
-            if value is not None:
-                sample_data[attr] = value
-            else:
-                missing_attrs.append(attr)
-                sample_data[attr] = f"[Attribute '{attr}' nicht gefunden]"
-
-        # 3. Extract the differing content (e.g., answer_a, answer_b) for columns
-        attr_a = next((attr for attr in required_attributes if attr.endswith('_a')), None)
-        attr_b = next((attr for attr in required_attributes if attr.endswith('_b')), None)
-
-        if not attr_a or not attr_b:
-             st.error(f"Pairwise metric '{metric}' misconfiguration: Missing required attributes ending in '_a' and '_b' in evaluation_templates.")
-             formatted_prompt = "[Fehler: Fehlende _a/_b Attribute in Konfiguration]"
-             return formatted_prompt, rating_scale # Return early
-
-        base_attr_a = attr_a[:-2]
-        base_attr_b = attr_b[:-2]
-
-        # Get content for column A (using sample_for_a)
+        content_a_html = f"[Attribut '{base_attr_a}' nicht gefunden]"
         if base_attr_a in sample_for_a:
-            raw_content_a = str(sample_for_a[base_attr_a])
-            # Escape the differing content - use preformatted for code blocks if needed later
-            content_a = f"<pre style='white-space: pre-wrap; word-wrap: break-word;'>{html.escape(raw_content_a)}</pre>"
+            raw_content_a = sample_for_a[base_attr_a]
+            content_a_html = md_converter(raw_content_a)
         else:
-            missing_attrs.append(attr_a)
-            content_a = f"[Attribute '{base_attr_a}' nicht in Sample A gefunden ({'getauscht' if swap_options else 'original'})]"
+            missing_attrs.append(attr_a_name)
 
-        # Get content for column B (using sample_for_b)
+        content_b_html = f"[Attribut '{base_attr_b}' nicht gefunden]"
         if base_attr_b in sample_for_b:
-            raw_content_b = str(sample_for_b[base_attr_b])
-            # Escape the differing content - use preformatted for code blocks if needed later
-            content_b = f"<pre style='white-space: pre-wrap; word-wrap: break-word;'>{html.escape(raw_content_b)}</pre>"
+            raw_content_b = sample_for_b[base_attr_b]
+            content_b_html = md_converter(raw_content_b)
         else:
-            missing_attrs.append(attr_b)
-            content_b = f"[Attribute '{base_attr_b}' nicht in Sample B gefunden ({'original' if swap_options else 'getauscht'})]"
+            missing_attrs.append(attr_b_name)
 
-        # 4. Construct Final Display (Instructions + Columns)
-        try:
-            formatted_instruction_prompt = template.format(**sample_data)
-        except KeyError as e:
-             st.error(f"Error formatting base prompt for metric '{metric}', sample/pair {sample_id}: Missing key {e}. Check template placeholders.")
-             formatted_instruction_prompt = f"[Error formatting instructions: Missing key {e}]"
-        except Exception as e:
-             st.error(f"An unexpected error occurred during base prompt formatting for metric '{metric}', sample/pair {sample_id}: {e}")
-             formatted_instruction_prompt = "[Error formatting instructions]"
+        pairwise_html = f"""
+        <div class="column-container">
+            <div class="column">
+                <h3>Antwort A</h3>
+                <div class="column-content markdown-content">{content_a_html}</div>
+            </div>
+            <div class="column">
+                <h3>Antwort B</h3>
+                <div class="column-content markdown-content">{content_b_html}</div>
+            </div>
+        </div>
+        """
+        html_parts.append(pairwise_html)
 
-        # --- HTML Structure: Contexts first (if any), then Instructions, then columns ---
-        html_output = f"""
-<style>
-/* --- Existing Column Styles --- */
-.column-container {{ display: flex; flex-wrap: wrap; gap: 24px; margin-top: 20px; justify-content: center; }}
-.column {{ flex: 1 1 300px; min-width: 280px; border: 1px solid #dcdcdc; padding: 20px; border-radius: 12px; background-color: #ffffff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05); transition: box-shadow 0.3s ease; word-wrap: break-word; overflow-wrap: break-word; }}
-.column:hover {{ box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }}
-.column h3 {{ margin-top: 0; margin-bottom: 10px; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 8px; color: #333; }}
-.column-content {{ font-size: 1rem; line-height: 1.5; color: #444; }}
-.column-content b {{ color: #111; }}
-.column-content pre {{ white-space: pre-wrap; word-wrap: break-word; background-color: #f8f9fa; padding: 10px; border-radius: 4px; border: 1px solid #e9ecef; font-family: monospace; font-size: 0.95em; }}
+    elif "answer" in required_attributes: # Handle single answer
+        answer = primary_sample.get("answer")
+        if answer is not None:
+            answer_html = md_converter(answer)
+            html_parts.append(f'<div class="answer-section"><h4>Antwort:</h4><div class="markdown-content">{answer_html}</div></div>')
+        else:
+            html_parts.append('<div class="answer-section"><h4>Antwort:</h4><p>[Antwort nicht gefunden]</p></div>')
+            missing_attrs.append("answer")
 
-/* --- Context Accordion Styles --- */
-.context-accordion-container {{ margin-bottom: 20px; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; background-color: #f9f9f9; }}
-.context-accordion-container h4 {{ margin-top: 0; margin-bottom: 10px; color: #555; }}
-.context-details {{ border-bottom: 1px solid #eee; margin-bottom: 5px; padding-bottom: 5px; }}
-.context-details:last-child {{ border-bottom: none; margin-bottom: 0; padding-bottom: 0; }}
-.context-summary {{ cursor: pointer; padding: 8px 0; font-weight: 500; color: #007bff; list-style: none; position: relative; padding-left: 20px; }}
-.context-summary::-webkit-details-marker {{ display: none; }}
-.context-summary::before {{ content: '+'; position: absolute; left: 0; top: 50%; transform: translateY(-50%); font-weight: bold; color: #6c757d; margin-right: 8px; }}
-.context-details[open] > .context-summary::before {{ content: '−'; }}
-.context-summary:hover {{ color: #0056b3; }}
-.context-content-body {{ padding: 10px 0 10px 20px; font-size: 0.95em; color: #333; line-height: 1.6; background-color: #fff; border-left: 3px solid #007bff; margin-top: 5px; }}
-.context-content-body p {{ margin-top: 0; margin-bottom: 0; }}
-/* Style for the 'no context available' message */
-.context-accordion-container > p {{ font-style: italic; color: #666; margin-top: 5px; }}
-</style>
+    # --- Combine HTML Parts and Add Styles ---
+    # ***** CSS (Ensure box styles are present) *****
+    styles = """
+    <style>
+    /* Instruction handled separately */
+    /* White background and border for sections */
+    .history-section, .query-section, .context-accordion-container, .reference-answer-section, .answer-section {
+        margin-bottom: 15px; padding: 12px; border: 1px solid #e0e0e0; border-radius: 6px; background-color: #ffffff;
+    }
+    /* Headers */
+    .history-section h4, .query-section h4, .reference-answer-section h4, .answer-section h4, .context-accordion-container h4 {
+        margin-top: 0; margin-bottom: 8px; font-size: 1.05em; color: #444; border-bottom: 1px solid #eee; padding-bottom: 5px;
+    }
+    /* Query plain text */
+    .query-section p { margin-bottom: 0; line-height: 1.5; word-wrap: break-word; } /* Added word-wrap */
 
-{context_accordion_html}
+    /* Markdown Content Styling */
+    .markdown-content { line-height: 1.5; word-wrap: break-word; }
+    .markdown-content p:last-child { margin-bottom: 0; }
+    .markdown-content p { margin-bottom: 0.75em; }
+    .markdown-content ul, .markdown-content ol { padding-left: 25px; margin-bottom: 0.75em; }
+    .markdown-content li { margin-bottom: 0.25em; }
+    .markdown-content code { background-color: #f0f0f0; padding: 0.2em 0.4em; border-radius: 3px; font-size: 0.9em; word-wrap: break-word; }
+    .markdown-content pre { background-color: #f8f9fa; padding: 10px; border-radius: 4px; border: 1px solid #e9ecef; overflow-x: auto; }
+    .markdown-content pre code { background-color: transparent; padding: 0; border-radius: 0; font-size: 0.95em; white-space: pre; }
+    .markdown-content blockquote { border-left: 3px solid #ccc; padding-left: 10px; margin-left: 0; color: #666; }
+    .markdown-content table { border-collapse: collapse; margin-bottom: 1em; width: auto; }
+    .markdown-content th, .markdown-content td { border: 1px solid #ddd; padding: 6px 10px; }
+    .markdown-content th { background-color: #f2f2f2; font-weight: bold; }
+    /* Ensure links are styled visibly */
+    .markdown-content a { color: #007bff; text-decoration: underline; }
+    .markdown-content a:hover { color: #0056b3; }
 
-{formatted_instruction_prompt}
+    /* Context Accordion Specific Styles */
+    /* .context-accordion-container already styled above */
+    .context-details { border-bottom: 1px solid #eee; margin-bottom: 5px; padding-bottom: 5px; background-color: #fff; border-radius: 4px; }
+    .context-details:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .context-summary { cursor: pointer; padding: 10px 15px 10px 35px; font-weight: 500; color: #007bff; list-style: none; position: relative; }
+    .context-summary::-webkit-details-marker { display: none; }
+    .context-summary::before { content: '+'; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-weight: bold; color: #6c757d; margin-right: 8px; font-size: 1.1em; }
+    .context-details[open] > .context-summary::before { content: '−'; }
+    .context-summary:hover { color: #0056b3; background-color: #f0f0f0; border-radius: 4px 4px 0 0; }
+    .context-content-body { padding: 15px 15px 15px 35px; font-size: 0.95em; color: #333; line-height: 1.6; border-top: 1px solid #eee; }
+    .context-content-body p { margin-top: 0; margin-bottom: 10px; white-space: pre-wrap; word-wrap: break-word; } /* Keep pre-wrap for context */
+    .context-accordion-container > p { font-style: italic; color: #666; margin-top: 5px; } /* For 'no context' message */
 
-<div class="column-container">
-    <div class="column">
-        <h3>Antwort A</h3>
-        <div class="column-content">{content_a}</div>
-    </div>
-    <div class="column">
-        <h3>Antwort B</h3>
-        <div class="column-content">{content_b}</div>
-    </div>
-</div>
-"""
-        formatted_prompt = html_output
-        # --- End HTML construction ---
+    /* Pairwise Columns */
+    .column-container { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 20px; justify-content: center; }
+    .column { flex: 1 1 300px; min-width: 280px; border: 1px solid #dcdcdc; padding: 20px; border-radius: 12px; background-color: #ffffff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05); transition: box-shadow 0.3s ease; }
+    .column:hover { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+    .column h3 { margin-top: 0; margin-bottom: 15px; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 8px; color: #333; }
+    .column-content { font-size: 1rem; color: #444; }
+    </style>
+    """
+    # ***** END CSS *****
+    formatted_prompt = styles + "\n".join(html_parts)
 
-    else:
-        # --- SINGLE SAMPLE LOGIC ---
-        sample = entity
-        # sample_id already extracted from primary_sample
-
-        # Populate sample_data (excluding context keys handled above)
-        for attr in required_attributes:
-            if attr in ['context', 'retrieved_contexts', 'retrieved_contexts_full']:
-                continue # Handled by accordion logic
-            elif attr == "history" and "history" in sample:
-                 sample_data[attr] = format_chat_history(sample.get("history", []))
-            elif attr in sample:
-                 sample_data[attr] = sample[attr]
-            else:
-                missing_attrs.append(attr)
-                sample_data[attr] = f"[Attribute '{attr}' not found in sample]"
-
-        try:
-            formatted_instruction_prompt = template.format(**sample_data)
-        except KeyError as e:
-            st.error(f"Error formatting prompt for metric '{metric}', sample {sample_id}: Missing key {e}.")
-            formatted_instruction_prompt = "[Error formatting prompt]"
-        except Exception as e:
-            st.error(f"An unexpected error occurred during prompt formatting for metric '{metric}', sample {sample_id}: {e}")
-            formatted_instruction_prompt = "[Error formatting prompt]"
-
-
-        # --- Combine Contexts and Instructions for Single Sample ---
-        # Add the same CSS here as well
-        html_output = f"""
-<style>
-/* --- Context Accordion Styles --- */
-.context-accordion-container {{ margin-bottom: 20px; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; background-color: #f9f9f9; }}
-.context-accordion-container h4 {{ margin-top: 0; margin-bottom: 10px; color: #555; }}
-.context-details {{ border-bottom: 1px solid #eee; margin-bottom: 5px; padding-bottom: 5px; }}
-.context-details:last-child {{ border-bottom: none; margin-bottom: 0; padding-bottom: 0; }}
-.context-summary {{ cursor: pointer; padding: 8px 0; font-weight: 500; color: #007bff; list-style: none; position: relative; padding-left: 20px; }}
-.context-summary::-webkit-details-marker {{ display: none; }}
-.context-summary::before {{ content: '+'; position: absolute; left: 0; top: 50%; transform: translateY(-50%); font-weight: bold; color: #6c757d; margin-right: 8px; }}
-.context-details[open] > .context-summary::before {{ content: '−'; }}
-.context-summary:hover {{ color: #0056b3; }}
-.context-content-body {{ padding: 10px 0 10px 20px; font-size: 0.95em; color: #333; line-height: 1.6; background-color: #fff; border-left: 3px solid #007bff; margin-top: 5px; }}
-.context-content-body p {{ margin-top: 0; margin-bottom: 0; }}
-</style>
-
-{context_accordion_html}
-
-{formatted_instruction_prompt}
-"""
-        formatted_prompt = html_output
-        # --- End Single Sample HTML ---
-
-
+    # --- Report Missing Attributes ---
     if missing_attrs:
-        # Filter out 'retrieved_contexts' from the warning if it was handled by the accordion logic
-        display_missing = [attr for attr in missing_attrs if not attr.startswith('context (')]
+        display_missing = [attr for attr in missing_attrs if not attr.startswith(('context (', 'history ('))]
         if display_missing:
-            st.warning(f"Missing required attributes {display_missing} for metric '{metric}' in sample/pair {sample_id}. Check 'required_attributes' in evaluation_templates and sample data.")
+            st.warning(f"Missing required attributes {display_missing} for metric '{metric}' in sample/pair {sample_id}.")
 
     return formatted_prompt, rating_scale
 
-
 # --- Adapted save_rating ---
-def save_rating(sample_id, metric, rating, it_background, is_pairwise, swap_options, supabase_client=None):
+def save_rating(sample_id, metric, rating, it_background, is_pairwise, swap_options, supabase_client=None, context_index=None): # Added context_index
     ratings_key = "Experten" if it_background == "Ja" else "Crowd"
 
-    # Ensure nested dictionaries exist
-    if ratings_key not in st.session_state.ratings: st.session_state.ratings[ratings_key] = {}
-    if sample_id not in st.session_state.ratings[ratings_key]: st.session_state.ratings[ratings_key][sample_id] = {}
-    if metric not in st.session_state.ratings[ratings_key][sample_id]:
-        st.session_state.ratings[ratings_key][sample_id][metric] = {"votes": [], "swap_history": []}
-    elif "votes" not in st.session_state.ratings[ratings_key][sample_id][metric]:
-         st.session_state.ratings[ratings_key][sample_id][metric]["votes"] = []
-    elif "swap_history" not in st.session_state.ratings[ratings_key][sample_id][metric]:
-         st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"] = []
+    # --- Local JSON Handling ---
+    if MODE == "local":
+        if ratings_key not in st.session_state.ratings: st.session_state.ratings[ratings_key] = {}
+        if sample_id not in st.session_state.ratings[ratings_key]: st.session_state.ratings[ratings_key][sample_id] = {}
+        if metric not in st.session_state.ratings[ratings_key][sample_id]:
+            st.session_state.ratings[ratings_key][sample_id][metric] = {"votes": [], "swap_history": []}
+        elif "votes" not in st.session_state.ratings[ratings_key][sample_id][metric]:
+             st.session_state.ratings[ratings_key][sample_id][metric]["votes"] = []
+        if "swap_history" not in st.session_state.ratings[ratings_key][sample_id][metric]:
+             st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"] = []
 
+        # Store rating, potentially with context index for context_relevance metrics
+        vote_to_save = rating
+        # --- MODIFIED CONDITION ---
+        if metric in ["context_relevance", "multiturn_context_relevance"] and context_index is not None:
+            # Store as a tuple (rating, context_index)
+            vote_to_save = (rating, context_index)
+            # Optional: Keep the warning or remove if expected behavior
+            # st.warning(f"Local Mode: Saving {metric} rating for index {context_index} as a tuple in 'votes'. Ensure downstream processing handles this.")
+        # --- END MODIFIED CONDITION ---
 
-    # Determine swap value to save
-    swap_value_to_save = swap_options if is_pairwise else None
+        st.session_state.ratings[ratings_key][sample_id][metric]["votes"].append(vote_to_save)
+        st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"].append(swap_options if is_pairwise else None)
 
-    # Append the new rating and swap status
-    st.session_state.ratings[ratings_key][sample_id][metric]["votes"].append(rating)
-    st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"].append(swap_value_to_save)
+        # Save immediately in local mode
+        save_ratings(st.session_state.ratings, None) # Pass None for supabase_client
 
-    # --- Save to Supabase or Local File ---
-    if MODE == "supabase" and supabase_client:
+    # --- Supabase Handling ---
+    elif MODE == "supabase" and supabase_client:
         try:
             insert_data = {
                 "rater_type": ratings_key,
-                "sample_id": sample_id, # Represents sample or pair ID
+                "sample_id": sample_id,
                 "metric": metric,
-                "vote": rating,
-                "swap_positions": swap_value_to_save, # Save swap status
+                "vote": rating, # Store the raw rating value
+                "swap_positions": swap_options if is_pairwise else None,
+                "context_index": context_index # Add the context index
             }
             response = supabase_client.schema("api").table("ratings").insert(insert_data).execute()
-            # Optional error checking on response
+            if hasattr(response, 'error') and response.error:
+                 st.error(f"Supabase insert error: {response.error}")
         except Exception as e:
             st.error(f"Error saving rating to Supabase: {e}")
-    elif MODE == "local":
-        save_ratings(st.session_state.ratings, None)
 
 
 # --- Adapted start_new_round ---
@@ -850,12 +948,12 @@ else:
     st.error(f"Invalid MODE '{MODE}'. Use 'local' or 'supabase'.")
     st.stop()
 
-
 def main():
     st.title("RAG Answer Rating App")
 
     # --- Initial User Setup ---
     if not st.session_state.app_started:
+        # ... (keep existing setup logic) ...
         st.write("Willkommen! Danke für die Teilnahme an dieser Bewertung.")
         st.write("Bitte geben Sie an, ob Sie über einen IT-Hintergrund verfügen.")
         it_background_choice = st.radio(
@@ -871,18 +969,13 @@ def main():
             else:
                 st.session_state.it_background = it_background_choice
                 st.session_state.app_started = True
-                # --- MODIFICATION START ---
-                # Directly start the first round here instead of just setting round_over=True
                 start_new_round()
-                # Rerun to reflect the state changes from start_new_round()
                 st.rerun()
-                # --- MODIFICATION END ---
-        return # Important: Still return here to prevent rest of main() executing on this initial run
+        return
 
     # --- Round Management ---
-    # This block will now be skipped on the rerun immediately after clicking "Start"
-    # because start_new_round() sets round_over to False (if samples are found)
     if st.session_state.round_over:
+        # ... (keep existing round end/start logic) ...
         if st.session_state.round_count > 0:
              st.success(f"Runde {st.session_state.round_count} abgeschlossen. Danke für Ihre Bewertungen!")
         if st.button("Nächste Runde starten", key="next_round_button"):
@@ -891,22 +984,17 @@ def main():
                  st.rerun()
         return
 
-    # ... (rest of the main function remains the same) ...
-    # Check for inconsistent state
+    # --- State Check ---
     current_entity_for_display = st.session_state.current_sample_pair if st.session_state.is_pairwise else st.session_state.current_sample
     if not current_entity_for_display and not st.session_state.round_over:
          st.warning("Zustandsfehler: Kein aktuelles Sample/Paar. Starte neue Runde.")
-         # Attempt to recover by starting a new round
          start_new_round()
-         if not st.session_state.round_over:
-             st.rerun()
+         if not st.session_state.round_over: st.rerun()
          else:
-             # If starting a new round still results in round_over, stop here
-             st.info("Keine weiteren Aufgaben verfügbar.") # Or a more appropriate message
-             return # Stop execution for this run
+             st.info("Keine weiteren Aufgaben verfügbar.")
+             return
 
-
-    # --- Display Current Entity (Sample or Pair) ---
+    # --- Display Header ---
     st.markdown(
         f"""
         <div style="display: flex; justify-content: center; margin-bottom: 20px;">
@@ -918,93 +1006,217 @@ def main():
         unsafe_allow_html=True,
     )
 
+    # Display the general intro prompt
     st.write(general_intro_prompt)
-    st.write(f"**Bewertungsdimension:** {st.session_state.current_metric}")
+    # '<div class="instruction-section">{html.escape(instruction_text)}</div>'
+    # st.write(f"{evaluation_templates[st.session_state.current_metric]['prompt']}")
+    # display above two lines as a single line
+    st.markdown(f'<div class="instruction-section">{evaluation_templates[st.session_state.current_metric]["prompt"]}</div>', unsafe_allow_html=True)
 
+    # --- Generate and Display the Structured Prompt ---
     try:
-        # Pass the correct entity (sample or pair) and swap_options
-        prompt, rating_scale = generate_prompt(
+        prompt_html, rating_scale = generate_prompt(
             current_entity_for_display,
             st.session_state.current_metric,
-            st.session_state.swap_options # Pass swap state
+            st.session_state.swap_options
         )
-        st.write("---")
-        st.html(prompt)
-        st.write("---")
+        st.write("---") # Separator before the main content
+        st.html(prompt_html) # Use st.html to render the generated HTML structure
+        st.write("---") # Separator after the main content
+
+        # --- Handle cases with no rating needed (e.g., context relevance with no contexts) ---
+        if not rating_scale and st.session_state.current_metric in ["context_relevance", "multiturn_context_relevance"]:
+             st.info("Keine Bewertung für dieses Item erforderlich (z.B. keine Kontexte vorhanden).")
+             if st.button("Weiter zum nächsten Item", key="skip_no_rating"):
+                 # ... (skip logic remains the same) ...
+                 st.session_state.entity_count += 1
+                 if st.session_state.entity_count >= st.session_state.num_entities_this_round or not st.session_state.entities_this_round:
+                     st.session_state.round_over = True
+                     st.session_state.current_sample = None
+                     st.session_state.current_sample_pair = None
+                     st.session_state.entities_this_round = []
+                 else:
+                     next_entity = st.session_state.entities_this_round.pop(0)
+                     if st.session_state.is_pairwise:
+                         st.session_state.current_sample_pair = next_entity
+                         st.session_state.current_sample = None
+                         st.session_state.swap_options = random.choice([True, False])
+                     else:
+                         st.session_state.current_sample = next_entity
+                         st.session_state.current_sample_pair = None
+                         st.session_state.swap_options = False
+                 st.rerun()
+             return # Stop further processing for this item
 
     except ValueError as e:
         st.error(f"Fehler beim Generieren des Prompts: {e}")
         st.button("Problem melden und nächste Runde starten", on_click=lambda: setattr(st.session_state, 'round_over', True))
-        return
+        return # Stop further processing for this item
     except Exception as e:
          st.error(f"Unerwarteter Fehler bei der Prompt-Generierung: {e}")
+         st.exception(e) # Show traceback for unexpected errors
          st.button("Problem melden und nächste Runde starten", on_click=lambda: setattr(st.session_state, 'round_over', True))
-         return
+         return # Stop further processing for this item
+
 
     # --- Rating Input ---
-    # Determine sample ID for the key (consistent for pairs)
+    # (Keep the existing rating input logic, including the special handling for context_relevance)
     current_id = current_entity_for_display[0]['id'] if st.session_state.is_pairwise else current_entity_for_display['id']
-    radio_key = f"user_rating_{st.session_state.round_count}_{current_id}_{st.session_state.entity_count}"
-    st.session_state.user_rating = st.radio(
-        "Ihre Bewertung:",
-        rating_scale,
-        key=radio_key,
-        horizontal=True,
-        index=None
-    )
+
+    if st.session_state.current_metric in ["context_relevance", "multiturn_context_relevance"]:
+        # ... (Keep context relevance rating input logic) ...
+        sample = current_entity_for_display
+        sources_list = sample.get('retrieved_contexts', [])
+        num_contexts = len(sources_list)
+        st.session_state.setdefault('context_ratings', {})
+
+        rating_dict_key = f"{st.session_state.round_count}_{current_id}_{st.session_state.entity_count}"
+        if st.session_state.get('current_rating_dict_key') != rating_dict_key:
+            st.session_state.context_ratings = {}
+            st.session_state.current_rating_dict_key = rating_dict_key
+
+        st.write("**Bewerten Sie jeden Kontext:**")
+        for i in range(num_contexts):
+            radio_key = f"context_rating_{rating_dict_key}_{i}"
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                 st.markdown(f"**Kontext #{i+1} Bewertung:**")
+            with col2:
+                 current_selection = st.session_state.context_ratings.get(i)
+                 index_to_select = None
+                 if current_selection is not None:
+                     try:
+                         str_rating_scale = [str(item) for item in rating_scale]
+                         index_to_select = str_rating_scale.index(str(current_selection))
+                     except ValueError:
+                         index_to_select = None
+
+                 st.session_state.context_ratings[i] = st.radio(
+                     f"Relevanz Kontext {i+1}",
+                     rating_scale,
+                     key=radio_key,
+                     horizontal=True,
+                     index=index_to_select,
+                     label_visibility="collapsed"
+                 )
+
+    else:
+        # Existing logic for single rating
+        radio_key = f"user_rating_{st.session_state.round_count}_{current_id}_{st.session_state.entity_count}"
+        st.session_state.user_rating = st.radio(
+            "Ihre Bewertung:",
+            rating_scale,
+            key=radio_key,
+            horizontal=True,
+            index=None # Or restore index if needed
+        )
 
     # --- Next Button Logic ---
+    # (Keep the existing "Weiter" button logic for saving ratings and advancing)
     if st.button("Weiter", key="next_entity_button"):
-        current_rating = st.session_state.user_rating
+        # ... (Keep the saving logic for both context_relevance and other metrics) ...
+        if st.session_state.current_metric in ["context_relevance", "multiturn_context_relevance"]:
+            num_contexts_expected = len(current_entity_for_display.get('retrieved_contexts', []))
+            all_rated = True
+            if len(st.session_state.context_ratings) != num_contexts_expected:
+                 all_rated = False
+            else:
+                 for i in range(num_contexts_expected):
+                      if st.session_state.context_ratings.get(i) is None:
+                           all_rated = False
+                           break
 
-        if current_rating is None:
-            st.warning("Bitte wählen Sie eine Bewertung aus, bevor Sie fortfahren.")
-        else:
-            try:
-                # Get the ID (consistent for single or pair)
-                sample_id_to_save = current_id
+            if not all_rated:
+                st.warning("Bitte bewerten Sie die Relevanz *aller* angezeigten Kontexte.")
+            else:
+                try:
+                    sample_id_to_save = current_id
+                    for index, rating in st.session_state.context_ratings.items():
+                        save_rating(
+                            sample_id=sample_id_to_save,
+                            metric=st.session_state.current_metric,
+                            rating=rating,
+                            it_background=st.session_state.it_background,
+                            is_pairwise=False,
+                            swap_options=False,
+                            supabase_client=supabase_client,
+                            context_index=index
+                        )
 
-                save_rating(
-                    sample_id_to_save,
-                    st.session_state.current_metric,
-                    current_rating,
-                    st.session_state.it_background,
-                    st.session_state.is_pairwise, # Pass pairwise status
-                    st.session_state.swap_options, # Pass swap status
-                    supabase_client
-                )
-                st.session_state.entity_count += 1
+                    st.session_state.entity_count += 1
+                    st.session_state.context_ratings = {} # Clear ratings for the next item
 
-                # Check if the round batch is finished
-                if st.session_state.entity_count >= st.session_state.num_entities_this_round or not st.session_state.entities_this_round:
-                    st.session_state.round_over = True
-                    st.session_state.current_sample = None
-                    st.session_state.current_sample_pair = None
-                    st.session_state.entities_this_round = []
-                else:
-                    # Get the next entity from the current round's batch
-                    next_entity = st.session_state.entities_this_round.pop(0)
-                    if st.session_state.is_pairwise:
-                        st.session_state.current_sample_pair = next_entity
+                    # Advance to next entity or end round
+                    if st.session_state.entity_count >= st.session_state.num_entities_this_round or not st.session_state.entities_this_round:
+                        st.session_state.round_over = True
                         st.session_state.current_sample = None
-                        st.session_state.swap_options = random.choice([True, False]) # Randomize swap for next pair
+                        st.session_state.current_sample_pair = None
+                        st.session_state.entities_this_round = []
                     else:
+                        next_entity = st.session_state.entities_this_round.pop(0)
                         st.session_state.current_sample = next_entity
                         st.session_state.current_sample_pair = None
-                        st.session_state.swap_options = False # Reset swap for single sample
+                        st.session_state.swap_options = False
 
-                st.session_state.user_rating = None
-                st.rerun()
+                    st.rerun()
 
-            except KeyError as e:
-                 st.error(f"Fehler beim Speichern: Fehlender Schlüssel {e}. Entity: {current_entity_for_display}")
-                 st.session_state.round_over = True
-                 st.rerun()
-            except Exception as e:
-                 st.error(f"Fehler beim Speichern der Bewertung: {e}")
-                 st.session_state.round_over = True
-                 st.rerun()
+                except Exception as e:
+                     st.error(f"Fehler beim Speichern der Kontext-Bewertungen: {e}")
+                     st.session_state.round_over = True # End round on save error
+                     st.rerun()
+
+        else: # Handle single/pairwise ratings
+            current_rating = st.session_state.user_rating
+            if current_rating is None:
+                st.warning("Bitte wählen Sie eine Bewertung aus, bevor Sie fortfahren.")
+            else:
+                try:
+                    sample_id_to_save = current_id
+                    save_rating(
+                        sample_id_to_save,
+                        st.session_state.current_metric,
+                        current_rating,
+                        st.session_state.it_background,
+                        st.session_state.is_pairwise,
+                        st.session_state.swap_options,
+                        supabase_client,
+                        context_index=None
+                    )
+                    st.session_state.entity_count += 1
+
+                    # Advance to next entity or end round
+                    if st.session_state.entity_count >= st.session_state.num_entities_this_round or not st.session_state.entities_this_round:
+                        st.session_state.round_over = True
+                        st.session_state.current_sample = None
+                        st.session_state.current_sample_pair = None
+                        st.session_state.entities_this_round = []
+                    else:
+                        next_entity = st.session_state.entities_this_round.pop(0)
+                        if st.session_state.is_pairwise:
+                            st.session_state.current_sample_pair = next_entity
+                            st.session_state.current_sample = None
+                            st.session_state.swap_options = random.choice([True, False])
+                        else:
+                            st.session_state.current_sample = next_entity
+                            st.session_state.current_sample_pair = None
+                            st.session_state.swap_options = False
+
+                    st.session_state.user_rating = None # Clear rating for the next item
+                    st.rerun()
+
+                except KeyError as e:
+                     st.error(f"Fehler beim Speichern: Fehlender Schlüssel {e}. Entity ID: {current_id}")
+                     st.session_state.round_over = True
+                     st.rerun()
+                except Exception as e:
+                     st.error(f"Fehler beim Speichern der Bewertung: {e}")
+                     st.exception(e)
+                     st.session_state.round_over = True
+                     st.rerun()
 
 
 if __name__ == "__main__":
+    # --- Ensure validation sets are loaded before main() if needed globally ---
+    # It seems they are loaded globally already in your original code.
+    # If not, load them here or pass them appropriately.
     main()
