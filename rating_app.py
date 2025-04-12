@@ -200,8 +200,21 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
                 for sample in samples:
                     sample_id = sample.get("id")
                     if sample_id:
-                        # Add non-pairwise metrics
-                        sample_metrics_map[sample_id].extend([m for m in category_metrics if m not in PAIRWISE_METRICS])
+                        retrieved_contexts = sample.get('retrieved_contexts')
+                        has_empty_context = not retrieved_contexts # True if None or empty list
+
+                        for metric in category_metrics:
+                            if metric in PAIRWISE_METRICS:
+                                continue # Handle pairwise later
+
+                            # --- ADDED CHECK ---
+                            # Skip if metric requires 'context' but sample has none
+                            metric_requires_context = 'context' in evaluation_templates.get(metric, {}).get('required_attributes', [])
+                            if metric_requires_context and has_empty_context:
+                                continue # Skip this sample for this metric
+                            # --- END CHECK ---
+
+                            sample_metrics_map[sample_id].append(metric)
 
     # Identify valid pairs and map pairwise metrics
     ids_a = {s['id'] for turn_type in validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_a[turn_type] for s in validation_data_a[turn_type][cat]}
@@ -282,6 +295,12 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
     # Ensure the ratings structure exists
     if ratings_key not in ratings: ratings[ratings_key] = {}
 
+    # --- ADDED: Get required attributes for the metric ---
+    metric_config = evaluation_templates.get(metric, {})
+    required_attributes = metric_config.get('required_attributes', [])
+    metric_strictly_requires_context = 'context' in required_attributes
+    # --- END ADDED ---
+
     if metric in PAIRWISE_METRICS:
         # Find pairs with the same ID in both files
         samples_a_dict = {s['id']: s for turn_type in validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_a[turn_type] for s in validation_data_a[turn_type][cat]}
@@ -307,6 +326,12 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
             if turn_type_a and category_a:
                  category_metrics = validation_data_a.get("evaluation_criteria", {}).get(turn_type_a, {}).get(category_a, [])
                  if metric in category_metrics:
+                     # --- ADDED CHECK ---
+                     retrieved_contexts_a = sample_a.get('retrieved_contexts')
+                     pair_has_empty_context = not retrieved_contexts_a
+                     if metric_strictly_requires_context and pair_has_empty_context:
+                         continue # Skip this pair
+                     # --- END CHECK ---
                      # Calculate vote count for this pair and metric
                      vote_count = len(ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", []))
                      relevant_entities.append(((sample_a, sample_b), vote_count)) # Store pair tuple
@@ -320,6 +345,12 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
                         for sample in samples:
                             sample_id = sample.get("id")
                             if sample_id:
+                                # --- ADDED CHECK ---
+                                retrieved_contexts = sample.get('retrieved_contexts')
+                                has_empty_context = not retrieved_contexts
+                                if metric_strictly_requires_context and has_empty_context:
+                                    continue # Skip this sample
+                                # --- END CHECK --
                                 vote_count = len(ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", []))
                                 relevant_entities.append((sample, vote_count)) # Store single sample
 
@@ -330,11 +361,15 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
     return [entity for entity, _ in relevant_entities]
 
 def format_contexts_as_accordion(sources, full_contexts):
+    # ... (keep existing implementation) ...
     """Formats lists of context sources and full texts into an HTML accordion."""
     # Basic validation (length check is also done before calling, but good practice)
     if not sources or not full_contexts or len(sources) != len(full_contexts):
-        st.warning("Context display error: Inconsistent source/content lists.")
-        return "<p><em>[Fehler bei der Anzeige des Kontexts: Ungültige oder inkonsistente Daten.]</em></p>" # Return error message
+        # This function should ideally only be called with valid, non-empty lists now
+        # due to upstream filtering and checks in generate_prompt.
+        # If it's still called with invalid data, log an error.
+        st.error("Internal Error: format_contexts_as_accordion called with invalid/empty data.")
+        return "<p><em>[Interner Fehler bei der Anzeige des Kontexts.]</em></p>"
 
     accordion_html = '<div class="context-accordion-container"><h4>Verfügbarer Kontext:</h4>'
 
@@ -344,7 +379,6 @@ def format_contexts_as_accordion(sources, full_contexts):
         full_context = full_contexts[i]
 
         # Escape content for safe HTML rendering
-        # Ensure conversion to string before escaping, just in case
         escaped_source = html.escape(str(source))
         escaped_content = html.escape(str(full_context)).replace('\n', '<br>') # Preserve line breaks
 
@@ -413,11 +447,17 @@ def generate_prompt(entity, metric, swap_options=False):
 
     # --- Generate Context Accordion - CONDITIONALLY (Updated Logic) ---
     # 1. Check if the metric configuration requires context display
-    metric_requires_context = 'context' in required_attributes
+    metric_strictly_requires_context = 'context' in required_attributes
+    metric_potentially_displays_context = 'retrieved_contexts' in required_attributes or 'retrieved_contexts_full' in required_attributes
 
     # 2. Check if the sample data has the required context lists
     sources_list = primary_sample.get('retrieved_contexts')
     full_contexts_list = primary_sample.get('retrieved_contexts_full')
+
+    context_keys_present = isinstance(sources_list, list) and isinstance(full_contexts_list, list)
+    context_lists_match = context_keys_present and len(sources_list) == len(full_contexts_list)
+    context_is_empty = not sources_list if context_keys_present else True # Treat missing keys as empty
+
 
     sample_has_valid_contexts = (
         isinstance(sources_list, list) and
@@ -426,20 +466,33 @@ def generate_prompt(entity, metric, swap_options=False):
         len(sources_list) == len(full_contexts_list) # Ensure lists have same length
     )
 
-    if metric_requires_context and sample_has_valid_contexts:
-        # Pass the lists directly to the updated formatting function
-        context_accordion_html = format_contexts_as_accordion(sources_list, full_contexts_list)
-    elif metric_requires_context and not sample_has_valid_contexts:
-        # Metric needs context, but data is missing, invalid, or inconsistent
-        missing_attrs.append('retrieved_contexts/retrieved_contexts_full') # Log that context data was missing/invalid
-        context_accordion_html = "<p><em>[Kontext für diese Bewertung erforderlich, aber Daten fehlen, sind ungültig oder inkonsistent.]</em></p>"
-        # Add a warning if the keys exist but are invalid/inconsistent
-        if 'retrieved_contexts' in primary_sample or 'retrieved_contexts_full' in primary_sample:
-             st.warning(f"Context data invalid/inconsistent for sample {sample_id}. Check 'retrieved_contexts' and 'retrieved_contexts_full'.")
-
-    # If metric_requires_context is False, context_accordion_html remains "" (empty string)
-    # --- End Context Accordion Generation ---
-
+# --- Generate Context Accordion HTML ---
+    if metric_potentially_displays_context:
+        if context_lists_match and not context_is_empty:
+            # Valid, non-empty context available
+            context_accordion_html = format_contexts_as_accordion(sources_list, full_contexts_list)
+        elif context_is_empty:
+            # Context is empty (or keys missing)
+            if metric_strictly_requires_context:
+                # This case should ideally be filtered out before calling generate_prompt.
+                # If it occurs, it indicates a potential logic error upstream.
+                st.error(f"Internal Error: Sample {sample_id} reached prompt generation for metric '{metric}' which requires context, but context is missing.")
+                context_accordion_html = "<p><em>[Fehler: Kontext erforderlich, aber nicht vorhanden.]</em></p>"
+                missing_attrs.append('context (required but missing)')
+            else:
+                # Context is not strictly required, but display is potential, and it's empty. Show the specific message.
+                context_accordion_html = """
+                <div class="context-accordion-container">
+                    <h4>Verfügbarer Kontext:</h4>
+                    <p><em>Für diese Anfrage steht kein Kontext zur Verfügung.</em></p>
+                </div>
+                """
+        else: # Context keys present but lists don't match length
+            st.warning(f"Context data invalid/inconsistent for sample {sample_id}. Check 'retrieved_contexts' and 'retrieved_contexts_full' lengths.")
+            context_accordion_html = "<p><em>[Fehler bei der Anzeige des Kontexts: Inkonsistente Daten.]</em></p>"
+            # Log if strictly required, otherwise just show the message
+            if metric_strictly_requires_context:
+                 missing_attrs.append('context (inconsistent data)')
 
     if is_pairwise:
         # --- PAIRWISE LOGIC ---
@@ -539,6 +592,8 @@ def generate_prompt(entity, metric, swap_options=False):
 .context-summary:hover {{ color: #0056b3; }}
 .context-content-body {{ padding: 10px 0 10px 20px; font-size: 0.95em; color: #333; line-height: 1.6; background-color: #fff; border-left: 3px solid #007bff; margin-top: 5px; }}
 .context-content-body p {{ margin-top: 0; margin-bottom: 0; }}
+/* Style for the 'no context available' message */
+.context-accordion-container > p {{ font-style: italic; color: #666; margin-top: 5px; }}
 </style>
 
 {context_accordion_html}
@@ -564,30 +619,27 @@ def generate_prompt(entity, metric, swap_options=False):
         sample = entity
         # sample_id already extracted from primary_sample
 
-        # Populate sample_data (excluding 'context')
+        # Populate sample_data (excluding context keys handled above)
         for attr in required_attributes:
-            # Skip 'context' here as it's handled separately by the accordion
-            if attr == 'context':
-                continue
+            if attr in ['context', 'retrieved_contexts', 'retrieved_contexts_full']:
+                continue # Handled by accordion logic
             elif attr == "history" and "history" in sample:
                  sample_data[attr] = format_chat_history(sample.get("history", []))
             elif attr in sample:
-                 # Escape regular attributes here if they might contain HTML special chars
-                 # Assuming most attributes are plain text for the prompt template itself
                  sample_data[attr] = sample[attr]
             else:
                 missing_attrs.append(attr)
                 sample_data[attr] = f"[Attribute '{attr}' not found in sample]"
 
         try:
-            # Format the main prompt instructions
             formatted_instruction_prompt = template.format(**sample_data)
         except KeyError as e:
-            st.error(f"Error formatting prompt for metric '{metric}', sample {sample_id}: Missing key {e}. Check template placeholders and 'required_attributes'.")
+            st.error(f"Error formatting prompt for metric '{metric}', sample {sample_id}: Missing key {e}.")
             formatted_instruction_prompt = "[Error formatting prompt]"
         except Exception as e:
             st.error(f"An unexpected error occurred during prompt formatting for metric '{metric}', sample {sample_id}: {e}")
             formatted_instruction_prompt = "[Error formatting prompt]"
+
 
         # --- Combine Contexts and Instructions for Single Sample ---
         # Add the same CSS here as well
@@ -617,7 +669,7 @@ def generate_prompt(entity, metric, swap_options=False):
 
     if missing_attrs:
         # Filter out 'retrieved_contexts' from the warning if it was handled by the accordion logic
-        display_missing = [attr for attr in missing_attrs if attr != 'retrieved_contexts']
+        display_missing = [attr for attr in missing_attrs if not attr.startswith('context (')]
         if display_missing:
             st.warning(f"Missing required attributes {display_missing} for metric '{metric}' in sample/pair {sample_id}. Check 'required_attributes' in evaluation_templates and sample data.")
 
