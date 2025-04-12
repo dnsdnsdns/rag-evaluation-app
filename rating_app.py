@@ -173,10 +173,11 @@ def save_ratings(ratings, supabase_client):
 
 
 # --- Adapted get_lowest_coverage_metric ---
+# --- Adapted get_lowest_coverage_metric ---
 def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it_background):
     ratings_key = "Experten" if it_background == "Ja" else "Crowd"
 
-    # 1. Get all possible metrics
+    # 1. Get all possible metrics (No change needed)
     all_metrics = set()
     for turn_type, criteria in validation_data_a.get("evaluation_criteria", {}).items():
         for category, metrics in criteria.items():
@@ -187,7 +188,7 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
         st.warning("No evaluation criteria found in validation set.")
         return None
 
-    # 2. Map samples/pairs to their applicable metrics
+    # 2. Map samples/pairs to their applicable metrics (No change needed)
     sample_metrics_map = defaultdict(list)
     pair_metrics_map = defaultdict(list)
 
@@ -211,7 +212,6 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
                             metric_config = evaluation_templates.get(metric, {})
                             metric_req_attrs = metric_config.get('required_attributes', [])
 
-                            # --- MODIFIED CHECK for skipping ---
                             is_context_relevance_metric = metric in ["context_relevance", "multiturn_context_relevance"]
                             metric_requires_history = 'history' in metric_req_attrs
 
@@ -221,21 +221,19 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
                             # Skip if metric requires history but sample has none
                             if metric_requires_history and not has_history:
                                 continue
-                            # --- END MODIFIED CHECK ---
 
                             sample_metrics_map[sample_id].append(metric)
 
-    # Identify valid pairs and map pairwise metrics
+    # Identify valid pairs and map pairwise metrics (No change needed)
     ids_a = {s['id'] for turn_type in validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_a[turn_type] for s in validation_data_a[turn_type][cat]}
     ids_b = {s['id'] for turn_type in validation_data_b if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_b[turn_type] for s in validation_data_b[turn_type][cat]}
     common_ids = ids_a.intersection(ids_b)
 
-    # Pre-fetch samples to avoid repeated lookups
     samples_a_dict = {s['id']: s for turn_type in validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_a[turn_type] for s in validation_data_a[turn_type][cat]}
 
     for sample_id in common_ids:
         sample_a = samples_a_dict.get(sample_id)
-        if not sample_a: continue # Should not happen with common_ids, but safe check
+        if not sample_a: continue
 
         turn_type_a = None
         category_a = None
@@ -253,7 +251,6 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
              applicable_pairwise = [m for m in category_metrics if m in PAIRWISE_METRICS]
 
              if applicable_pairwise:
-                 # Check context/history requirements for pairwise metrics if needed
                  retrieved_contexts_a = sample_a.get('retrieved_contexts')
                  pair_has_empty_context = not retrieved_contexts_a
                  history_a = sample_a.get('history')
@@ -263,29 +260,23 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
                      metric_config = evaluation_templates.get(metric, {})
                      metric_req_attrs = metric_config.get('required_attributes', [])
                      metric_requires_history = 'history' in metric_req_attrs
-                     # Add context check if any pairwise metric requires it and might lack it
-                     # is_context_relevance_metric = metric in [...] # If pairwise context relevance exists
 
-                     # Skip if metric requires history but pair lacks it
                      if metric_requires_history and not pair_has_history:
                          continue
                      # Add context skip logic if needed for pairwise
 
-                     pair_metrics_map[sample_id].append(metric) # Use append instead of extend
+                     pair_metrics_map[sample_id].append(metric)
 
-    # 3. Calculate vote counts per metric
-    metric_vote_counts = defaultdict(list)
+    # 3. Calculate vote counts per metric (No change needed here, we use this info below)
+    metric_vote_counts = defaultdict(list) # Stores a list of vote counts (one per applicable entity)
     if ratings_key not in ratings: ratings[ratings_key] = {}
 
     for sample_id, metrics in sample_metrics_map.items():
         for metric in metrics:
-            # Handle potential tuple format for context relevance votes in local mode
             votes_data = ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", [])
-            if metric in ["context_relevance", "multiturn_context_relevance"] and MODE == "local":
-                 # Count the number of tuples (each tuple is one context rating)
-                 vote_count = len([v for v in votes_data if isinstance(v, (tuple, list))]) # Count tuples/lists
-            else:
-                 vote_count = len(votes_data)
+            # For context relevance, count each individual rating (tuple in local, row in supabase)
+            # For others, count each rating entry
+            vote_count = len(votes_data) # This is the number of votes for THIS sample/metric
             metric_vote_counts[metric].append(vote_count)
 
     for sample_id, metrics in pair_metrics_map.items():
@@ -293,48 +284,52 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
             vote_count = len(ratings[ratings_key].get(sample_id, {}).get(metric, {}).get("votes", []))
             metric_vote_counts[metric].append(vote_count)
 
-    # 4. Calculate average coverage per metric
+    # --- MODIFIED SECTION: Calculate coverage based on total votes ---
+    # 4. Calculate coverage per metric (Average number of votes per applicable entity)
     metric_coverage = {}
     for metric in all_metrics:
-        vote_counts_list = metric_vote_counts.get(metric, [])
-        num_entities = 0
+        vote_counts_list = metric_vote_counts.get(metric, []) # List of vote counts for this metric (e.g., [2, 0, 1, 3])
+        num_entities = 0 # Total number of entities (samples/pairs) applicable to this metric
 
+        # Determine total applicable entities for this metric
         if metric in PAIRWISE_METRICS:
             num_entities = sum(1 for sample_id in pair_metrics_map if metric in pair_metrics_map[sample_id])
         else:
             num_entities = sum(1 for sample_id in sample_metrics_map if metric in sample_metrics_map[sample_id])
 
         if num_entities > 0:
-            # For context relevance, sum represents total context chunks rated, not samples
-            if metric in ["context_relevance", "multiturn_context_relevance"]:
-                 # Average coverage = total context ratings / number of samples applicable
-                 total_context_ratings = sum(vote_counts_list)
-                 metric_coverage[metric] = total_context_ratings / num_entities if num_entities > 0 else 0
-            else:
-                 # Average coverage = total votes / number of samples/pairs applicable
-                 total_votes = sum(vote_counts_list)
-                 metric_coverage[metric] = total_votes / num_entities if num_entities > 0 else 0
+            # Sum the total number of votes across all applicable entities
+            total_votes = sum(vote_counts_list)
+
+            # Coverage = (Total Votes / Total Applicable Entities) * 100
+            # This represents the average number of votes per entity, expressed as a percentage.
+            # It can exceed 100 if entities are rated multiple times on average.
+            metric_coverage[metric] = (total_votes / num_entities) * 100.0
         else:
+            # If no entities are applicable for this metric, coverage is 0
             metric_coverage[metric] = 0
 
-    # 5. Find the metric with the lowest coverage
-    if not metric_coverage:
-        # Filter out metrics that have no applicable samples/pairs before random choice
-        applicable_metrics = [m for m in all_metrics if (m in PAIRWISE_METRICS and any(m in metrics for metrics in pair_metrics_map.values())) or \
-                                                        (m not in PAIRWISE_METRICS and any(m in metrics for metrics in sample_metrics_map.values()))]
-        return random.choice(applicable_metrics) if applicable_metrics else None
+    # --- END MODIFIED SECTION ---
 
+    # 5. Find the metric with the lowest coverage (No change needed in this logic)
+    # Filter out metrics that have no applicable samples/pairs before finding the minimum
+    applicable_metrics_with_coverage = {
+        m: cov for m, cov in metric_coverage.items()
+        if (m in PAIRWISE_METRICS and any(m in metrics for metrics in pair_metrics_map.values())) or \
+           (m not in PAIRWISE_METRICS and any(m in metrics for metrics in sample_metrics_map.values()))
+    }
 
-    min_coverage = min(metric_coverage.values())
-    lowest_coverage_metrics = [m for m, cov in metric_coverage.items() if cov == min_coverage]
+    if not applicable_metrics_with_coverage:
+        st.warning("No applicable metrics found with samples/pairs to rate.")
+        # Fallback: Maybe pick any metric defined? Or return None.
+        all_defined_metrics = list(all_metrics)
+        return random.choice(all_defined_metrics) if all_defined_metrics else None
 
-    # Filter out metrics with no applicable entities before choosing
-    lowest_coverage_metrics = [m for m in lowest_coverage_metrics if metric_coverage[m] >= 0 and \
-                               ((m in PAIRWISE_METRICS and any(m in metrics for metrics in pair_metrics_map.values())) or \
-                                (m not in PAIRWISE_METRICS and any(m in metrics for metrics in sample_metrics_map.values())))]
+    min_coverage_value = min(applicable_metrics_with_coverage.values())
+    lowest_coverage_metrics = [m for m, cov in applicable_metrics_with_coverage.items() if cov == min_coverage_value]
 
+    return random.choice(lowest_coverage_metrics) if lowest_coverage_metrics else None # Should always find one if applicable_metrics_with_coverage is not empty
 
-    return random.choice(lowest_coverage_metrics) if lowest_coverage_metrics else None
 
 
 # --- Adapted get_samples_for_metric ---
