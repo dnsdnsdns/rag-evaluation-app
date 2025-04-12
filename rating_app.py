@@ -5,19 +5,17 @@ import os
 import supabase
 import html
 from collections import defaultdict
-# --- IMPORTANT: Update prompt_templates.py for pairwise metrics ---
-# Ensure quality_pairwise requires ['query', 'answer_a', 'answer_b']
-# Ensure multi_turn_quality_pairwise requires ['history_a', 'history_b'] (and maybe 'query')
 from prompt_templates import evaluation_templates, general_intro_prompt
 
 DATA_FILE = "ratings_data.json"
-VALIDATION_FILE_A = "validationset.json"
+VALIDATION_FILE_A = "validationset-test.json"
 # --- Added second validation file constant ---
-VALIDATION_FILE_B = "validationset-b.json"
+VALIDATION_FILE_B = "validationset-test-b.json"
 MODE = "local"  # supported modes: "local", "supabase"
 
 # --- Define Pairwise Metrics ---
-PAIRWISE_METRICS = {"quality_pairwise", "multiturn_quality_pairwise"}
+#PAIRWISE_METRICS = {"quality_pairwise", "multiturn_quality_pairwise"}
+PAIRWISE_METRICS = {}
 
 # --- Helper Functions ---
 
@@ -44,8 +42,7 @@ def load_ratings(supabase_client):
                 sample_id = row["sample_id"] # This ID represents the sample or sample pair
                 metric = row["metric"]
                 vote = row["vote"]
-                swap_positions = row.get("swap_positions") # Use .get for safety
-
+                swap_positions = row.get("swap_positions")
                 if sample_id not in ratings[rater_type]:
                     ratings[rater_type][sample_id] = {}
                 if metric not in ratings[rater_type][sample_id]:
@@ -332,16 +329,46 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
     # Return only the sample objects or pair tuples
     return [entity for entity, _ in relevant_entities]
 
+def format_contexts_as_accordion(sources, full_contexts):
+    """Formats lists of context sources and full texts into an HTML accordion."""
+    # Basic validation (length check is also done before calling, but good practice)
+    if not sources or not full_contexts or len(sources) != len(full_contexts):
+        st.warning("Context display error: Inconsistent source/content lists.")
+        return "<p><em>[Fehler bei der Anzeige des Kontexts: Ungültige oder inkonsistente Daten.]</em></p>" # Return error message
+
+    accordion_html = '<div class="context-accordion-container"><h4>Verfügbarer Kontext:</h4>'
+
+    # Iterate using index, assuming lists correspond
+    for i in range(len(sources)):
+        source = sources[i]
+        full_context = full_contexts[i]
+
+        # Escape content for safe HTML rendering
+        # Ensure conversion to string before escaping, just in case
+        escaped_source = html.escape(str(source))
+        escaped_content = html.escape(str(full_context)).replace('\n', '<br>') # Preserve line breaks
+
+        accordion_html += f"""
+        <details class="context-details">
+            <summary class="context-summary">Kontext {i+1}: {escaped_source}</summary>
+            <div class="context-content-body">
+                <p>{escaped_content}</p>
+            </div>
+        </details>
+        """
+
+    accordion_html += '</div>'
+    return accordion_html
 
 # --- Helper function for formatting history ---
 def format_chat_history(history_list):
+    # ... (keep existing implementation) ...
     """Formats a list of chat turns into a readable HTML string."""
     formatted_lines = []
     for turn in history_list:
         role = turn.get('role', 'unknown').lower()
         # Basic HTML escaping for content to prevent accidental tag injection
         # You might want a more robust library like `bleach` if content can be complex
-        import html
         content = html.escape(turn.get('content', '[missing content]'))
 
         prefix = "Unbekannt" # Default prefix
@@ -360,6 +387,7 @@ def format_chat_history(history_list):
     # Join lines with the HTML break tag
     return "<br>".join(formatted_lines)
 
+
 # --- Adapted generate_prompt ---
 def generate_prompt(entity, metric, swap_options=False):
     if metric not in evaluation_templates:
@@ -375,13 +403,48 @@ def generate_prompt(entity, metric, swap_options=False):
     content_b = "[Antwort B nicht gefunden]" # Default content for option B answer
     missing_attrs = []
     formatted_shared_history = None # To store formatted shared history if applicable
+    context_accordion_html = "" # Initialize context HTML
 
     is_pairwise = isinstance(entity, tuple) and len(entity) == 2
+
+    # --- Determine the primary sample to extract potential contexts from ---
+    primary_sample = entity[0] if is_pairwise else entity
+    sample_id = primary_sample.get("id", "N/A") # Use primary sample ID
+
+    # --- Generate Context Accordion - CONDITIONALLY (Updated Logic) ---
+    # 1. Check if the metric configuration requires context display
+    metric_requires_context = 'context' in required_attributes
+
+    # 2. Check if the sample data has the required context lists
+    sources_list = primary_sample.get('retrieved_contexts')
+    full_contexts_list = primary_sample.get('retrieved_contexts_full')
+
+    sample_has_valid_contexts = (
+        isinstance(sources_list, list) and
+        isinstance(full_contexts_list, list) and
+        len(sources_list) > 0 and # Ensure lists are not empty
+        len(sources_list) == len(full_contexts_list) # Ensure lists have same length
+    )
+
+    if metric_requires_context and sample_has_valid_contexts:
+        # Pass the lists directly to the updated formatting function
+        context_accordion_html = format_contexts_as_accordion(sources_list, full_contexts_list)
+    elif metric_requires_context and not sample_has_valid_contexts:
+        # Metric needs context, but data is missing, invalid, or inconsistent
+        missing_attrs.append('retrieved_contexts/retrieved_contexts_full') # Log that context data was missing/invalid
+        context_accordion_html = "<p><em>[Kontext für diese Bewertung erforderlich, aber Daten fehlen, sind ungültig oder inkonsistent.]</em></p>"
+        # Add a warning if the keys exist but are invalid/inconsistent
+        if 'retrieved_contexts' in primary_sample or 'retrieved_contexts_full' in primary_sample:
+             st.warning(f"Context data invalid/inconsistent for sample {sample_id}. Check 'retrieved_contexts' and 'retrieved_contexts_full'.")
+
+    # If metric_requires_context is False, context_accordion_html remains "" (empty string)
+    # --- End Context Accordion Generation ---
+
 
     if is_pairwise:
         # --- PAIRWISE LOGIC ---
         sample_a_orig, sample_b_orig = entity
-        sample_id = sample_a_orig.get("id", "N/A") # Assume IDs match
+        # sample_id already extracted from primary_sample (sample_a_orig)
 
         # Determine which sample provides content for A and B based on swap_options
         sample_for_a = sample_b_orig if swap_options else sample_a_orig
@@ -389,23 +452,22 @@ def generate_prompt(entity, metric, swap_options=False):
 
         # 1. Handle Shared History (if required by the metric)
         if "history" in required_attributes:
-            # Fetch history from one sample (assuming they are identical)
-            history_list = sample_a_orig.get("history", [])
+            history_list = sample_a_orig.get("history", []) # Get history from sample_a
             if history_list:
                 formatted_shared_history = format_chat_history(history_list)
-                # Add to sample_data if the template uses {shared_history} placeholder
                 sample_data["history"] = formatted_shared_history
             else:
                 missing_attrs.append("history")
                 sample_data["history"] = "[Chat-Verlauf nicht gefunden]"
 
         # 2. Populate other base template data (e.g., query, if needed)
-        #    Exclude 'history' and attributes ending in _a/_b
+        #    Exclude 'history', 'context', and attributes ending in _a/_b
         base_template_attrs = [
             attr for attr in required_attributes
-            if not (attr.endswith('_a') or attr.endswith('_b') or attr == 'history')
+            if not (attr.endswith('_a') or attr.endswith('_b') or attr == 'history' or attr == 'context')
         ]
         for attr in base_template_attrs:
+            # Prioritize value from sample_a_orig if available
             value = sample_a_orig.get(attr, sample_b_orig.get(attr))
             if value is not None:
                 sample_data[attr] = value
@@ -422,13 +484,14 @@ def generate_prompt(entity, metric, swap_options=False):
              formatted_prompt = "[Fehler: Fehlende _a/_b Attribute in Konfiguration]"
              return formatted_prompt, rating_scale # Return early
 
-        base_attr_a = attr_a[:-2] # e.g., "answer" from "answer_a"
-        base_attr_b = attr_b[:-2] # e.g., "answer" from "answer_b"
+        base_attr_a = attr_a[:-2]
+        base_attr_b = attr_b[:-2]
 
         # Get content for column A (using sample_for_a)
         if base_attr_a in sample_for_a:
             raw_content_a = str(sample_for_a[base_attr_a])
-            content_a = html.escape(raw_content_a) # Escape the differing content
+            # Escape the differing content - use preformatted for code blocks if needed later
+            content_a = f"<pre style='white-space: pre-wrap; word-wrap: break-word;'>{html.escape(raw_content_a)}</pre>"
         else:
             missing_attrs.append(attr_a)
             content_a = f"[Attribute '{base_attr_a}' nicht in Sample A gefunden ({'getauscht' if swap_options else 'original'})]"
@@ -436,14 +499,14 @@ def generate_prompt(entity, metric, swap_options=False):
         # Get content for column B (using sample_for_b)
         if base_attr_b in sample_for_b:
             raw_content_b = str(sample_for_b[base_attr_b])
-            content_b = html.escape(raw_content_b) # Escape the differing content
+            # Escape the differing content - use preformatted for code blocks if needed later
+            content_b = f"<pre style='white-space: pre-wrap; word-wrap: break-word;'>{html.escape(raw_content_b)}</pre>"
         else:
             missing_attrs.append(attr_b)
             content_b = f"[Attribute '{base_attr_b}' nicht in Sample B gefunden ({'original' if swap_options else 'getauscht'})]"
 
         # 4. Construct Final Display (Instructions + Columns)
         try:
-            # Format the base instruction part (which might now include shared_history)
             formatted_instruction_prompt = template.format(**sample_data)
         except KeyError as e:
              st.error(f"Error formatting base prompt for metric '{metric}', sample/pair {sample_id}: Missing key {e}. Check template placeholders.")
@@ -452,57 +515,33 @@ def generate_prompt(entity, metric, swap_options=False):
              st.error(f"An unexpected error occurred during base prompt formatting for metric '{metric}', sample/pair {sample_id}: {e}")
              formatted_instruction_prompt = "[Error formatting instructions]"
 
-        # --- HTML Structure: Instructions first, then columns for differing answers ---
-        # (CSS can remain the same as before)
-        html_columns = f"""
+        # --- HTML Structure: Contexts first (if any), then Instructions, then columns ---
+        html_output = f"""
 <style>
-.column-container {{
-    display: flex;
-    flex-wrap: wrap; /* Allow wrapping on smaller screens */
-    gap: 24px;       /* Space between columns */
-    margin-top: 20px;
-    justify-content: center; /* Center columns if they wrap */
-}}
+/* --- Existing Column Styles --- */
+.column-container {{ display: flex; flex-wrap: wrap; gap: 24px; margin-top: 20px; justify-content: center; }}
+.column {{ flex: 1 1 300px; min-width: 280px; border: 1px solid #dcdcdc; padding: 20px; border-radius: 12px; background-color: #ffffff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05); transition: box-shadow 0.3s ease; word-wrap: break-word; overflow-wrap: break-word; }}
+.column:hover {{ box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }}
+.column h3 {{ margin-top: 0; margin-bottom: 10px; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 8px; color: #333; }}
+.column-content {{ font-size: 1rem; line-height: 1.5; color: #444; }}
+.column-content b {{ color: #111; }}
+.column-content pre {{ white-space: pre-wrap; word-wrap: break-word; background-color: #f8f9fa; padding: 10px; border-radius: 4px; border: 1px solid #e9ecef; font-family: monospace; font-size: 0.95em; }}
 
-.column {{
-    /* --- MODIFICATION START --- */
-    flex: 1 1 300px; /* Allow columns to grow and shrink, base width 300px */
-    /* Removed max-width: 45%; to let them fill more space */
-    min-width: 280px; /* Ensure minimum width */
-    /* --- MODIFICATION END --- */
-    border: 1px solid #dcdcdc;
-    padding: 20px;
-    border-radius: 12px;
-    background-color: #ffffff;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-    transition: box-shadow 0.3s ease;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-}}
-
-.column:hover {{
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}}
-
-.column h3 {{
-    margin-top: 0;
-    margin-bottom: 10px;
-    font-size: 1.2rem;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 8px;
-    color: #333;
-}}
-
-.column-content {{
-    font-size: 1rem;
-    line-height: 1.5;
-    color: #444;
-}}
-
-.column-content b {{ /* For history prefix */
-    color: #111;
-}}
+/* --- Context Accordion Styles --- */
+.context-accordion-container {{ margin-bottom: 20px; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; background-color: #f9f9f9; }}
+.context-accordion-container h4 {{ margin-top: 0; margin-bottom: 10px; color: #555; }}
+.context-details {{ border-bottom: 1px solid #eee; margin-bottom: 5px; padding-bottom: 5px; }}
+.context-details:last-child {{ border-bottom: none; margin-bottom: 0; padding-bottom: 0; }}
+.context-summary {{ cursor: pointer; padding: 8px 0; font-weight: 500; color: #007bff; list-style: none; position: relative; padding-left: 20px; }}
+.context-summary::-webkit-details-marker {{ display: none; }}
+.context-summary::before {{ content: '+'; position: absolute; left: 0; top: 50%; transform: translateY(-50%); font-weight: bold; color: #6c757d; margin-right: 8px; }}
+.context-details[open] > .context-summary::before {{ content: '−'; }}
+.context-summary:hover {{ color: #0056b3; }}
+.context-content-body {{ padding: 10px 0 10px 20px; font-size: 0.95em; color: #333; line-height: 1.6; background-color: #fff; border-left: 3px solid #007bff; margin-top: 5px; }}
+.context-content-body p {{ margin-top: 0; margin-bottom: 0; }}
 </style>
+
+{context_accordion_html}
 
 {formatted_instruction_prompt}
 
@@ -517,34 +556,70 @@ def generate_prompt(entity, metric, swap_options=False):
     </div>
 </div>
 """
-        formatted_prompt = html_columns
+        formatted_prompt = html_output
         # --- End HTML construction ---
 
     else:
-        # --- SINGLE SAMPLE LOGIC (Remains the same) ---
+        # --- SINGLE SAMPLE LOGIC ---
         sample = entity
-        sample_id = sample.get("id", "N/A")
+        # sample_id already extracted from primary_sample
+
+        # Populate sample_data (excluding 'context')
         for attr in required_attributes:
-            if attr == "history" and "history" in sample:
+            # Skip 'context' here as it's handled separately by the accordion
+            if attr == 'context':
+                continue
+            elif attr == "history" and "history" in sample:
                  sample_data[attr] = format_chat_history(sample.get("history", []))
             elif attr in sample:
+                 # Escape regular attributes here if they might contain HTML special chars
+                 # Assuming most attributes are plain text for the prompt template itself
                  sample_data[attr] = sample[attr]
             else:
                 missing_attrs.append(attr)
                 sample_data[attr] = f"[Attribute '{attr}' not found in sample]"
 
         try:
-            formatted_prompt = template.format(**sample_data)
+            # Format the main prompt instructions
+            formatted_instruction_prompt = template.format(**sample_data)
         except KeyError as e:
             st.error(f"Error formatting prompt for metric '{metric}', sample {sample_id}: Missing key {e}. Check template placeholders and 'required_attributes'.")
-            formatted_prompt = "[Error formatting prompt]"
+            formatted_instruction_prompt = "[Error formatting prompt]"
         except Exception as e:
             st.error(f"An unexpected error occurred during prompt formatting for metric '{metric}', sample {sample_id}: {e}")
-            formatted_prompt = "[Error formatting prompt]"
+            formatted_instruction_prompt = "[Error formatting prompt]"
+
+        # --- Combine Contexts and Instructions for Single Sample ---
+        # Add the same CSS here as well
+        html_output = f"""
+<style>
+/* --- Context Accordion Styles --- */
+.context-accordion-container {{ margin-bottom: 20px; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; background-color: #f9f9f9; }}
+.context-accordion-container h4 {{ margin-top: 0; margin-bottom: 10px; color: #555; }}
+.context-details {{ border-bottom: 1px solid #eee; margin-bottom: 5px; padding-bottom: 5px; }}
+.context-details:last-child {{ border-bottom: none; margin-bottom: 0; padding-bottom: 0; }}
+.context-summary {{ cursor: pointer; padding: 8px 0; font-weight: 500; color: #007bff; list-style: none; position: relative; padding-left: 20px; }}
+.context-summary::-webkit-details-marker {{ display: none; }}
+.context-summary::before {{ content: '+'; position: absolute; left: 0; top: 50%; transform: translateY(-50%); font-weight: bold; color: #6c757d; margin-right: 8px; }}
+.context-details[open] > .context-summary::before {{ content: '−'; }}
+.context-summary:hover {{ color: #0056b3; }}
+.context-content-body {{ padding: 10px 0 10px 20px; font-size: 0.95em; color: #333; line-height: 1.6; background-color: #fff; border-left: 3px solid #007bff; margin-top: 5px; }}
+.context-content-body p {{ margin-top: 0; margin-bottom: 0; }}
+</style>
+
+{context_accordion_html}
+
+{formatted_instruction_prompt}
+"""
+        formatted_prompt = html_output
+        # --- End Single Sample HTML ---
 
 
     if missing_attrs:
-        st.warning(f"Missing required attributes {missing_attrs} for metric '{metric}' in sample/pair {sample_id}. Check 'required_attributes' in evaluation_templates.")
+        # Filter out 'retrieved_contexts' from the warning if it was handled by the accordion logic
+        display_missing = [attr for attr in missing_attrs if attr != 'retrieved_contexts']
+        if display_missing:
+            st.warning(f"Missing required attributes {display_missing} for metric '{metric}' in sample/pair {sample_id}. Check 'required_attributes' in evaluation_templates and sample data.")
 
     return formatted_prompt, rating_scale
 
@@ -802,7 +877,7 @@ def main():
             st.session_state.swap_options # Pass swap state
         )
         st.write("---")
-        st.markdown(prompt, unsafe_allow_html=True)
+        st.html(prompt)
         st.write("---")
 
     except ValueError as e:

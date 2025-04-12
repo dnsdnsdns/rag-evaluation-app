@@ -12,7 +12,7 @@ evaluation_templates = {
             "Bitte bewerte, ob die Antwort ausschließlich auf Fakten aus dem Kontext beruht:\n\n"
             "Kontext: {retrieved_contexts}\n\nAntwort: {answer}"
         ),
-        "required_attributes": ["retrieved_contexts", "answer"],
+        "required_attributes": ["retrieved_contexts", "answer", "retrieved_contexts_full"],
         "rating_scale": ["Ja", "Nein"]
     },
     "answer_relevance": {
@@ -28,7 +28,7 @@ evaluation_templates = {
             "Bitte bewerte, ob der Kontext relevant zur Beantwortung der Frage ist:\n\n"
             "Frage: {query}\n\nKontext: {retrieved_contexts}"
         ),
-        "required_attributes": ["retrieved_contexts", "query"],
+        "required_attributes": ["retrieved_contexts", "query", "retrieved_contexts_full", "context"],
         "rating_scale": ["Ja", "Nein"]
     },
     "handoff": {
@@ -79,7 +79,7 @@ evaluation_templates = {
             "Gesprächsverlauf:\n\n{history}\n\n"
             "Frage: {query}\n\nKontext: {retrieved_contexts}"
         ),
-        "required_attributes": ["retrieved_contexts", "query", "history"],
+        "required_attributes": ["retrieved_contexts", "query", "history", "retrieved_contexts_full", "context"],
         "rating_scale": ["Ja", "Nein"]
     },
     "multiturn_faithfulness": {
@@ -88,7 +88,7 @@ evaluation_templates = {
             "Gesprächsverlauf:\n\n{history}\n\n"
             "Kontext: {retrieved_contexts}\n\nAntwort: {answer}"
         ),
-        "required_attributes": ["retrieved_contexts", "answer", "history"],
+        "required_attributes": ["retrieved_contexts", "answer", "history", "retrieved_contexts_full"],
         "rating_scale": ["Ja", "Nein"]
     },
     "multiturn_handoff": {
