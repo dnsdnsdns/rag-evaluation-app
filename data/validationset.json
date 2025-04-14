@@ -199,7 +199,7 @@
         "reference_contexts": [
           "DB-ORA-03"
         ],
-        "reference_answer": "Das Seminar \"Oracle Datenbankadministration Grundlagen\" findet an folgenden Terminen statt:\n- 07.07.2025 bis 11.07.2025, sowohl online als auch in Wiesbaden\n- 08.09.2025 bis 12.09.2025, sowohl online als auch in Wiesbaden\n- 03.11.2025 bis 07.11.2025, sowohl online als auch in Wiesbaden\n\nDie Kursgebühren betragen 2350,00 € für die Präsenzteilnahme und 2115,00 € für die Online-Teilnahme.",
+        "reference_answer": "Das Seminar \"Oracle Datenbankadministration Grundlagen\" findet an folgenden Terminen statt:\n\n- 07.07.2025 bis 11.07.2025, sowohl online als auch in Wiesbaden\n- 08.09.2025 bis 12.09.2025, sowohl online als auch in Wiesbaden\n- 03.11.2025 bis 07.11.2025, sowohl online als auch in Wiesbaden\n\nDie Kursgebühren betragen 2350,00 € für die Präsenzteilnahme und 2115,00 € für die Online-Teilnahme.",
         "retrieved_contexts": [
           "DB-ORA-01",
           "ORA-TENANT",

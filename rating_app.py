@@ -8,10 +8,10 @@ import markdown
 from collections import defaultdict
 from prompt_templates import evaluation_templates, general_intro_prompt
 
-DATA_FILE = "ratings_data.json"
-VALIDATION_FILE_A = "validationset.json"
+DATA_FILE = "data/ratings_data.json"
+VALIDATION_FILE_A = "data/validationset.json"
 # --- Added second validation file constant ---
-VALIDATION_FILE_B = "validationset-b.json"
+VALIDATION_FILE_B = "data/validationset-b.json"
 MODE = "supabase"  # supported modes: "local", "supabase"
 
 # --- Define Pairwise Metrics ---

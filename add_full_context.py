@@ -2,13 +2,13 @@ import json
 import pickle
 
 # Load JSON data
-json_path = "validationset.json"
+json_path = "data/validationset.json"
 with open(json_path, "r", encoding="utf-8") as f:
     json_data = json.load(f)
 
 
 # Load LangChain documents
-pkl_path = "langchain_documents.pkl"
+pkl_path = "data/langchain_documents.pkl"
 with open(pkl_path, "rb") as f:
     langchain_documents = pickle.load(f)
 
@@ -37,7 +37,7 @@ for section in ["singleturn", "multiturn"]:
                 enrich_samples(samples)
 
 # Save the updated data
-with open("final_enriched.json", "w", encoding="utf-8") as f:
+with open("data/final_enriched.json", "w", encoding="utf-8") as f:
     json.dump(json_data, f, ensure_ascii=False, indent=2)
 
 print("Updated JSON saved as final_enriched.json")
