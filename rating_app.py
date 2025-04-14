@@ -18,6 +18,134 @@ TARGET_VOTES = 3
 SAMPLES_PER_ROUND = 1
 PAIRWISE_METRICS = {"quality_pairwise", "multiturn_quality_pairwise"}
 
+@st.cache_data # Cache the result of this function
+def load_validation_sets(file_a, file_b):
+    """Loads validation sets from JSON files and performs version check."""
+    validation_sets = {}
+    try:
+        with open(file_a, "r", encoding="utf-8") as f:
+            validation_sets['a'] = json.load(f)
+        with open(file_b, "r", encoding="utf-8") as f:
+            validation_sets['b'] = json.load(f)
+
+        version_a = validation_sets['a'].get("version")
+        version_b = validation_sets['b'].get("version")
+
+        if version_a is None or version_b is None:
+            raise ValueError(f"Fehler: 'version'-Schlüssel fehlt in {file_a} oder {file_b}.")
+        if version_a != version_b:
+            raise ValueError(f"Fehler: Versionskonflikt zwischen {file_a} (v{version_a}) und {file_b} (v{version_b}).")
+
+        # Basic structure validation (optional but recommended)
+        for key in ['a', 'b']:
+            if not isinstance(validation_sets[key].get("evaluation_criteria"), dict):
+                 st.warning(f"Validation set '{key}' missing or has invalid 'evaluation_criteria'.")
+            # Add more checks as needed
+
+        st.success(f"Validation sets (Version {version_a}) loaded successfully.") # Log success
+        return validation_sets
+
+    except FileNotFoundError as e:
+        st.error(f"Error: Validation file not found: {e.filename}. Please ensure '{file_a}' and '{file_b}' exist.")
+        st.stop() # Stop execution if files are missing
+    except json.JSONDecodeError as e:
+        st.error(f"Error: Failed to decode JSON from validation file: {e}. Check file content.")
+        st.stop()
+    except ValueError as e: # Catch our custom version errors
+        st.error(str(e))
+        st.stop()
+    except Exception as e:
+        st.error(f"An unexpected error occurred loading validation files: {e}")
+        st.exception(e) # Show traceback for unexpected errors
+        st.stop()
+
+
+# --- Cached Function: Calculate Metric Mappings ---
+@st.cache_data # Cache the mapping based on the validation data content
+def calculate_metric_mappings(_validation_data_a, _validation_data_b):
+    """
+    Calculates which metrics apply to which samples or pairs based on validation data.
+    Takes copies (_var) as input for caching based on content.
+    """
+    sample_metrics_map = defaultdict(list)
+    pair_metrics_map = defaultdict(list)
+
+    # --- Process validation_data_a for single/multi-turn metrics ---
+    for turn_type in ["singleturn", "multiturn"]:
+        if turn_type in _validation_data_a:
+            for category, samples in _validation_data_a[turn_type].items():
+                category_metrics = _validation_data_a.get("evaluation_criteria", {}).get(turn_type, {}).get(category, [])
+                for sample in samples:
+                    sample_id = sample.get("id")
+                    if sample_id:
+                        retrieved_contexts = sample.get('retrieved_contexts')
+                        # Check if retrieved_contexts is explicitly None or an empty list
+                        has_empty_context = retrieved_contexts is None or (isinstance(retrieved_contexts, list) and not retrieved_contexts)
+                        history = sample.get('history')
+                        has_history = isinstance(history, list) and len(history) > 0
+
+                        for metric in category_metrics:
+                            if metric in PAIRWISE_METRICS: continue # Skip pairwise here
+
+                            metric_config = evaluation_templates.get(metric, {})
+                            metric_req_attrs = metric_config.get('required_attributes', [])
+                            is_context_relevance_metric = metric in ["context_relevance", "multiturn_context_relevance"]
+                            metric_requires_history = 'history' in metric_req_attrs
+                            metric_strictly_requires_context = metric_config.get("strictly_requires_context", False)
+
+                            # Skip checks
+                            if is_context_relevance_metric and has_empty_context: continue
+                            if metric_strictly_requires_context and has_empty_context: continue # Skip if context is strictly needed but missing
+                            if metric_requires_history and not has_history: continue
+
+                            sample_metrics_map[sample_id].append(metric)
+
+    # --- Identify valid pairs and map pairwise metrics ---
+    ids_a = {s['id'] for turn_type in _validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in _validation_data_a[turn_type] for s in _validation_data_a[turn_type][cat]}
+    ids_b = {s['id'] for turn_type in _validation_data_b if turn_type in ['singleturn', 'multiturn'] for cat in _validation_data_b[turn_type] for s in _validation_data_b[turn_type][cat]}
+    common_ids = ids_a.intersection(ids_b)
+
+    samples_a_dict = {s['id']: s for turn_type in _validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in _validation_data_a[turn_type] for s in _validation_data_a[turn_type][cat]}
+
+    for sample_id in common_ids:
+        sample_a = samples_a_dict.get(sample_id)
+        if not sample_a: continue
+
+        turn_type_a, category_a = None, None
+        # Find category for sample_a
+        for tt in ["singleturn", "multiturn"]:
+             if tt in _validation_data_a:
+                 for cat, samples in _validation_data_a[tt].items():
+                     if any(s.get("id") == sample_id for s in samples):
+                         turn_type_a, category_a = tt, cat
+                         break
+             if turn_type_a: break
+
+        if turn_type_a and category_a:
+             category_metrics = _validation_data_a.get("evaluation_criteria", {}).get(turn_type_a, {}).get(category_a, [])
+             applicable_pairwise = [m for m in category_metrics if m in PAIRWISE_METRICS]
+
+             if applicable_pairwise:
+                 history_a = sample_a.get('history')
+                 pair_has_history = isinstance(history_a, list) and len(history_a) > 0
+                 # Add context check if pairwise metrics can depend on context
+                 # retrieved_contexts_a = sample_a.get('retrieved_contexts')
+                 # pair_has_context = retrieved_contexts_a is not None and (isinstance(retrieved_contexts_a, list) and retrieved_contexts_a)
+
+                 for metric in applicable_pairwise:
+                     metric_config = evaluation_templates.get(metric, {})
+                     metric_req_attrs = metric_config.get('required_attributes', [])
+                     metric_requires_history = 'history' in metric_req_attrs
+                     # metric_strictly_requires_context = metric_config.get("strictly_requires_context", False) # Example if needed
+
+                     if metric_requires_history and not pair_has_history: continue
+                     # if metric_strictly_requires_context and not pair_has_context: continue
+
+                     pair_metrics_map[sample_id].append(metric)
+                     # st.write(f"Pairwise metric {metric} applicable to sample ID {sample_id}") # DEBUG (keep low verbosity in cached func)
+
+    return sample_metrics_map, pair_metrics_map
+
 # --- NEW Helper Function: Get Effective Vote Count ---
 def get_effective_vote_count(sample_id, metric, ratings_data_for_sample_metric, validation_data_a):
     """
@@ -76,8 +204,9 @@ def get_effective_vote_count(sample_id, metric, ratings_data_for_sample_metric, 
             min_votes = min(context_index_counts[i] for i in range(num_expected_contexts))
             return min_votes
 
+# --- Supabase Initialization (Consider caching the client resource) ---
+@st.cache_resource # Cache the Supabase client object
 def init_supabase():
-    # ... (no changes needed)
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -87,14 +216,16 @@ def init_supabase():
 
 # --- Load/Save Functions (Ensure they handle the potential tuple format for context votes locally) ---
 # Modify load_ratings slightly to ensure structure even if file is empty/new
-def load_ratings(supabase_client):
+def load_ratings(supabase_client): # Pass the client
     ratings = {"Experten": {}, "Crowd": {}}
-
     if MODE == "supabase":
-        # ... (Keep existing Supabase load logic) ...
-        # NOTE: This does NOT aggregate context relevance votes correctly yet.
+        if not supabase_client:
+             st.error("Supabase client not available for loading ratings.")
+             return ratings # Return empty if client failed
         try:
+            # ... (rest of Supabase load logic using supabase_client) ...
             response = supabase_client.schema("api").table("ratings").select("*").execute()
+            # ... (processing logic) ...
             data = response.data
 
             for row in data:
@@ -105,6 +236,7 @@ def load_ratings(supabase_client):
                 swap_positions = row.get("swap_positions")
                 # context_index = row.get("context_index") # Fetch if needed
 
+                if rater_type not in ratings: ratings[rater_type] = {} # Ensure rater_type exists
                 if sample_id not in ratings[rater_type]:
                     ratings[rater_type][sample_id] = {}
                 if metric not in ratings[rater_type][sample_id]:
@@ -125,47 +257,52 @@ def load_ratings(supabase_client):
                 if len(ratings[rater_type][sample_id][metric]["swap_history"]) < current_votes_len:
                      ratings[rater_type][sample_id][metric]["swap_history"].append(swap_val)
 
-
         except Exception as e:
             st.error(f"Error loading ratings from Supabase: {e}")
             ratings = {"Experten": {}, "Crowd": {}} # Fallback
-
-    else:  # local mode
+    else: # local mode
+        # ... (Keep existing local load logic) ...
         if os.path.exists(DATA_FILE):
             try:
                 with open(DATA_FILE, "r", encoding="utf-8") as f: # Ensure correct encoding
-                    ratings = json.load(f)
-                    # Basic validation and structure check
-                    if not isinstance(ratings, dict): ratings = {}
-                    if "Experten" not in ratings: ratings["Experten"] = {}
-                    if "Crowd" not in ratings: ratings["Crowd"] = {}
+                    loaded_data = json.load(f)
+                    # More robust check for top-level structure
+                    if isinstance(loaded_data, dict):
+                        ratings["Experten"] = loaded_data.get("Experten", {})
+                        ratings["Crowd"] = loaded_data.get("Crowd", {})
+                    else:
+                        st.warning(f"Local data file {DATA_FILE} does not contain a valid dictionary. Starting fresh.")
+                        ratings = {"Experten": {}, "Crowd": {}}
 
-                    for group in ratings:
-                        if not isinstance(ratings[group], dict): ratings[group] = {}
-                        for sample_id in list(ratings[group].keys()): # Iterate over keys copy
-                            if not isinstance(ratings[group][sample_id], dict):
+                    # Deep validation and structure correction
+                    for group, group_data in ratings.items():
+                        if not isinstance(group_data, dict):
+                            ratings[group] = {}
+                            continue
+                        for sample_id, sample_data in list(group_data.items()): # Iterate over copy
+                            if not isinstance(sample_data, dict):
                                 ratings[group][sample_id] = {}
                                 continue
-                            for metric in list(ratings[group][sample_id].keys()): # Iterate over keys copy
-                                if not isinstance(ratings[group][sample_id][metric], dict):
+                            for metric, metric_data in list(sample_data.items()): # Iterate over copy
+                                if not isinstance(metric_data, dict):
                                     ratings[group][sample_id][metric] = {"votes": [], "swap_history": []}
                                     continue
 
-                                # Ensure 'votes' and 'swap_history' lists exist
-                                if "votes" not in ratings[group][sample_id][metric] or not isinstance(ratings[group][sample_id][metric]["votes"], list):
-                                    ratings[group][sample_id][metric]["votes"] = []
-                                if "swap_history" not in ratings[group][sample_id][metric] or not isinstance(ratings[group][sample_id][metric]["swap_history"], list):
-                                    ratings[group][sample_id][metric]["swap_history"] = []
+                                votes = metric_data.get("votes", [])
+                                swaps = metric_data.get("swap_history", [])
 
-                                # Ensure swap_history length matches votes length (simple padding)
-                                votes_len = len(ratings[group][sample_id][metric]["votes"])
-                                swap_len = len(ratings[group][sample_id][metric]["swap_history"])
+                                if not isinstance(votes, list): votes = []
+                                if not isinstance(swaps, list): swaps = []
+
+                                # Ensure swap_history length matches votes length
+                                votes_len = len(votes)
+                                swap_len = len(swaps)
                                 if swap_len < votes_len:
-                                    ratings[group][sample_id][metric]["swap_history"].extend([None] * (votes_len - swap_len))
+                                    swaps.extend([None] * (votes_len - swap_len))
                                 elif swap_len > votes_len:
-                                     ratings[group][sample_id][metric]["swap_history"] = ratings[group][sample_id][metric]["swap_history"][:votes_len] # Truncate extra swaps
+                                     swaps = swaps[:votes_len] # Truncate extra swaps
 
-                                # DO NOT add vote_count here, calculate dynamically when needed
+                                ratings[group][sample_id][metric] = {"votes": votes, "swap_history": swaps}
 
             except json.JSONDecodeError:
                 st.error(f"Error loading ratings data from {DATA_FILE}. File might be corrupted. Starting fresh.")
@@ -183,187 +320,111 @@ def load_ratings(supabase_client):
     return ratings
 
 
-def save_ratings(ratings, supabase_client):
-    # No need to remove vote_count as it's not stored persistently
-    ratings_copy = json.loads(json.dumps(ratings)) # Deep copy for safety
+def save_ratings(ratings, supabase_client): # supabase_client is unused here now
+    # ... (Keep consistency check logic) ...
+    ratings_copy = json.loads(json.dumps(ratings)) # Deep copy
 
-    # Perform consistency check before saving (Keep this part)
     for group in ratings_copy:
         for sample_id in ratings_copy[group]:
             for metric in ratings_copy[group][sample_id]:
-                votes = ratings_copy[group][sample_id][metric].get("votes", [])
-                swaps = ratings_copy[group][sample_id][metric].get("swap_history", [])
+                # Ensure keys exist before accessing
+                metric_data = ratings_copy[group][sample_id][metric]
+                votes = metric_data.get("votes", [])
+                swaps = metric_data.get("swap_history", [])
+
+                if not isinstance(votes, list): votes = []
+                if not isinstance(swaps, list): swaps = []
+
                 if len(votes) != len(swaps):
-                     st.error(f"CRITICAL SAVE ERROR: Mismatch votes ({len(votes)}) / swap_history ({len(swaps)}) for {sample_id}/{metric}. Attempting to fix by padding swap_history.")
-                     # Attempt fix: Pad swap_history
+                     st.warning(f"SAVE WARNING: Mismatch votes ({len(votes)}) / swap_history ({len(swaps)}) for {sample_id}/{metric}. Attempting fix.")
                      swap_len = len(swaps)
                      votes_len = len(votes)
                      if swap_len < votes_len:
-                         ratings_copy[group][sample_id][metric]["swap_history"].extend([None] * (votes_len - swap_len))
-                     else: # Should not happen if load_ratings fixed it, but as fallback
-                         ratings_copy[group][sample_id][metric]["swap_history"] = swaps[:votes_len]
-                     # Re-check length after fix attempt
+                         swaps.extend([None] * (votes_len - swap_len))
+                     else:
+                         swaps = swaps[:votes_len]
+                     # Update the copy
+                     ratings_copy[group][sample_id][metric]["swap_history"] = swaps
+                     # Re-check
                      if len(ratings_copy[group][sample_id][metric]["votes"]) != len(ratings_copy[group][sample_id][metric]["swap_history"]):
-                          st.error(f"--> FIX FAILED for {sample_id}/{metric}. Skipping save for this metric to avoid corruption.")
-                          continue # Skip saving this potentially corrupt metric entry
-
+                          st.error(f"--> FIX FAILED for {sample_id}/{metric}. Data might be inconsistent.")
+                          # Decide whether to skip saving this metric or save the potentially fixed version
 
     if MODE == "supabase":
-        # --- REMOVE THE BULK INSERT LOGIC ---
-        # The actual saving to Supabase happens individually in the save_rating function.
-        # This function (save_ratings) is called in local mode to overwrite the file,
-        # but in Supabase mode, the individual inserts in save_rating are sufficient.
-        # You might log a message here if needed, but no database operation is required.
-        # st.info("Supabase mode: Individual ratings saved via save_rating.")
-        pass # Nothing to do here for saving
-
-    else: # local mode (Keep this part as is)
+        # Individual saves happen in save_rating, nothing to do here.
+        pass
+    else: # local mode
         try:
-            with open(DATA_FILE, "w", encoding="utf-8") as f: # Ensure correct encoding
-                json.dump(ratings_copy, f, indent=4, ensure_ascii=False) # Use ensure_ascii=False for non-latin chars
+            with open(DATA_FILE, "w", encoding="utf-8") as f:
+                json.dump(ratings_copy, f, indent=4, ensure_ascii=False)
         except IOError as e:
             st.error(f"Error saving ratings locally to {DATA_FILE}: {e}")
         except Exception as e:
              st.error(f"Unexpected error saving ratings locally: {e}")
 
 
-
 # --- MODIFIED get_lowest_coverage_metric ---
 def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it_background):
     ratings_key = "Experten" if it_background == "Ja" else "Crowd"
-    st.write("--- Debug: Calculating Lowest Coverage Metric ---") # DEBUG
+    # st.write("--- Debug: Calculating Lowest Coverage Metric ---") # Keep debug low
 
-    # 1. Get all possible metrics
-    all_metrics = set(evaluation_templates.keys()) # Get all defined metrics
-    st.write(f"All defined metrics: {all_metrics}") # DEBUG
+    # 1. Get cached metric mappings
+    # Pass the actual validation data to the cached function
+    sample_metrics_map, pair_metrics_map = calculate_metric_mappings(validation_data_a, validation_data_b)
 
+    # 2. Get all possible metrics from templates
+    all_metrics = set(evaluation_templates.keys())
     if not all_metrics:
         st.warning("No evaluation templates found.")
         return None
 
-    # 2. Map samples/pairs to their applicable metrics
-    sample_metrics_map = defaultdict(list)
-    pair_metrics_map = defaultdict(list)
-
-    # Process validation_data_a for single/multi-turn metrics
-    # ... (Keep the existing logic for populating sample_metrics_map) ...
-    for turn_type in ["singleturn", "multiturn"]:
-        if turn_type in validation_data_a:
-            for category, samples in validation_data_a[turn_type].items():
-                category_metrics = validation_data_a.get("evaluation_criteria", {}).get(turn_type, {}).get(category, [])
-                for sample in samples:
-                    sample_id = sample.get("id")
-                    if sample_id:
-                        retrieved_contexts = sample.get('retrieved_contexts')
-                        has_empty_context = not retrieved_contexts
-                        history = sample.get('history')
-                        has_history = isinstance(history, list) and len(history) > 0
-
-                        for metric in category_metrics:
-                            if metric in PAIRWISE_METRICS: continue # Skip pairwise here
-
-                            metric_config = evaluation_templates.get(metric, {})
-                            metric_req_attrs = metric_config.get('required_attributes', [])
-                            is_context_relevance_metric = metric in ["context_relevance", "multiturn_context_relevance"]
-                            metric_requires_history = 'history' in metric_req_attrs
-
-                            # Skip checks
-                            if is_context_relevance_metric and has_empty_context: continue
-                            if metric_requires_history and not has_history: continue
-
-                            sample_metrics_map[sample_id].append(metric)
-
-    # Identify valid pairs and map pairwise metrics
-    # ... (Keep the existing logic for populating pair_metrics_map) ...
-    ids_a = {s['id'] for turn_type in validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_a[turn_type] for s in validation_data_a[turn_type][cat]}
-    ids_b = {s['id'] for turn_type in validation_data_b if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_b[turn_type] for s in validation_data_b[turn_type][cat]}
-    common_ids = ids_a.intersection(ids_b)
-    st.write(f"Common IDs for pairwise: {len(common_ids)}") # DEBUG
-
-    samples_a_dict = {s['id']: s for turn_type in validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_a[turn_type] for s in validation_data_a[turn_type][cat]}
-
-    for sample_id in common_ids:
-        sample_a = samples_a_dict.get(sample_id)
-        if not sample_a: continue
-
-        turn_type_a, category_a = None, None
-        # Find category for sample_a
-        for tt in ["singleturn", "multiturn"]:
-             if tt in validation_data_a:
-                 for cat, samples in validation_data_a[tt].items():
-                     if any(s.get("id") == sample_id for s in samples):
-                         turn_type_a, category_a = tt, cat
-                         break
-             if turn_type_a: break
-
-        if turn_type_a and category_a:
-             category_metrics = validation_data_a.get("evaluation_criteria", {}).get(turn_type_a, {}).get(category_a, [])
-             applicable_pairwise = [m for m in category_metrics if m in PAIRWISE_METRICS]
-
-             if applicable_pairwise:
-                 history_a = sample_a.get('history')
-                 pair_has_history = isinstance(history_a, list) and len(history_a) > 0
-
-                 for metric in applicable_pairwise:
-                     metric_config = evaluation_templates.get(metric, {})
-                     metric_req_attrs = metric_config.get('required_attributes', [])
-                     metric_requires_history = 'history' in metric_req_attrs
-
-                     if metric_requires_history and not pair_has_history: continue
-                     # Add context skip logic if needed
-
-                     pair_metrics_map[sample_id].append(metric)
-                     st.write(f"Pairwise metric {metric} applicable to sample ID {sample_id}") # DEBUG
-
     # 3. Calculate effective vote counts per metric using the helper function
-    metric_effective_vote_counts = defaultdict(list) # Stores list of *effective* vote counts
+    metric_effective_vote_counts = defaultdict(list)
     if ratings_key not in ratings: ratings[ratings_key] = {}
     user_ratings = ratings.get(ratings_key, {})
 
-    # Calculate for single/multi-turn samples
+    # Calculate for single/multi-turn samples using the map
     for sample_id, metrics in sample_metrics_map.items():
         for metric in metrics:
             ratings_data = user_ratings.get(sample_id, {}).get(metric, {})
+            # Pass validation_data_a needed by the helper for context relevance logic
             effective_count = get_effective_vote_count(sample_id, metric, ratings_data, validation_data_a)
             metric_effective_vote_counts[metric].append(effective_count)
 
-    # Calculate for pairwise samples
+    # Calculate for pairwise samples using the map
     for sample_id, metrics in pair_metrics_map.items():
         for metric in metrics:
-            # Pairwise doesn't have special context aggregation, use standard count
             ratings_data = user_ratings.get(sample_id, {}).get(metric, {})
             vote_count = len(ratings_data.get("votes", [])) # Standard count for pairwise
             metric_effective_vote_counts[metric].append(vote_count)
 
-    # 4. Calculate coverage per metric (Average number of *effective* votes per applicable entity)
+    # 4. Calculate coverage per metric
     metric_coverage = {}
-    st.write("--- Metric Coverage Calculation ---") # DEBUG
+    # st.write("--- Metric Coverage Calculation ---") # Keep debug low
     for metric in all_metrics:
         effective_counts_list = metric_effective_vote_counts.get(metric, [])
-        num_entities = 0 # Total applicable entities
+        num_entities = 0 # Total applicable entities based on maps
 
-        # Determine total applicable entities for this metric
         if metric in PAIRWISE_METRICS:
+            # Count entities from the pair_metrics_map
             num_entities = sum(1 for sid in pair_metrics_map if metric in pair_metrics_map[sid])
         else:
+            # Count entities from the sample_metrics_map
             num_entities = sum(1 for sid in sample_metrics_map if metric in sample_metrics_map[sid])
 
         if num_entities > 0:
             total_effective_votes = sum(effective_counts_list)
-            # Ensure list length matches entity count (should match if logic is correct)
+            # Sanity check: list length should ideally match entity count from maps
             if len(effective_counts_list) != num_entities:
-                 st.warning(f"Mismatch count for metric {metric}: {len(effective_counts_list)} vote counts vs {num_entities} entities. Check logic.")
-                 # Fallback or adjust? Let's use num_entities as the divisor.
+                 st.warning(f"Coverage Calc Warning: Mismatch count for metric {metric}: {len(effective_counts_list)} vote counts vs {num_entities} entities from map. Using map count.")
             average_votes = total_effective_votes / num_entities
-            metric_coverage[metric] = average_votes # Store average votes directly
-            st.write(f"Metric: {metric}, Entities: {num_entities}, EffectiveVotes: {total_effective_votes}, AvgVotes: {average_votes:.2f}") # DEBUG
+            metric_coverage[metric] = average_votes
+            st.write(f"Metric: {metric}, Entities: {num_entities}, AvgVotes: {average_votes:.2f}") # DEBUG
         else:
-            metric_coverage[metric] = float('inf') # Assign high coverage if no entities apply (won't be selected)
-            st.write(f"Metric: {metric}, Entities: 0, Coverage: INF (skipped)") # DEBUG
-
+            metric_coverage[metric] = float('inf') # Assign high coverage if no entities apply
+            # st.write(f"Metric: {metric}, Entities: 0, Coverage: INF") # DEBUG
 
     # 5. Find the metric with the lowest average effective votes
-    # Filter out metrics with infinite coverage (no applicable entities)
     applicable_metrics_coverage = {
         m: cov for m, cov in metric_coverage.items() if cov != float('inf')
     }
@@ -377,20 +438,21 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
     min_coverage_value = min(applicable_metrics_coverage.values())
     lowest_coverage_metrics = [m for m, cov in applicable_metrics_coverage.items() if cov == min_coverage_value]
 
-    st.write(f"Min Avg Votes: {min_coverage_value:.2f}") # DEBUG
-    st.write(f"Metrics with lowest avg votes: {lowest_coverage_metrics}") # DEBUG
-    st.write("--- End Debug ---") # DEBUG
+    # st.write(f"Min Avg Votes: {min_coverage_value:.2f}") # DEBUG
+    # st.write(f"Metrics with lowest avg votes: {lowest_coverage_metrics}") # DEBUG
+    # st.write("--- End Debug ---") # DEBUG
 
-    # Choose randomly among metrics with the same lowest coverage
     chosen_metric = random.choice(lowest_coverage_metrics)
-    st.info(f"Selected metric: {chosen_metric}") # User Info
+    st.info(f"Selected metric based on coverage: {chosen_metric}") # User Info
     return chosen_metric
 
 
 # --- MODIFIED get_samples_for_metric ---
 def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings, it_background):
+    # (Keep the existing logic, it seems correct for ordering based on votes)
+    # Ensure it uses the validation_data_a passed in, which comes from the cached source.
     ratings_key = "Experten" if it_background == "Ja" else "Crowd"
-    entities_with_votes = [] # Store tuples of (entity, effective_vote_count)
+    entities_with_votes = []
     if ratings_key not in ratings: ratings[ratings_key] = {}
     user_ratings = ratings.get(ratings_key, {})
 
@@ -398,19 +460,18 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
     required_attributes = metric_config.get('required_attributes', [])
     is_context_relevance_metric = metric in ["context_relevance", "multiturn_context_relevance"]
     metric_requires_history = 'history' in required_attributes
+    metric_strictly_requires_context = metric_config.get("strictly_requires_context", False) # Added check
 
     # --- Step 1: Collect relevant entities and their *effective* vote counts ---
     if metric in PAIRWISE_METRICS:
-        # (Keep existing logic to find common_ids and iterate)
         samples_a_dict = {s['id']: s for turn_type in validation_data_a if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_a[turn_type] for s in validation_data_a[turn_type][cat]}
         samples_b_dict = {s['id']: s for turn_type in validation_data_b if turn_type in ['singleturn', 'multiturn'] for cat in validation_data_b[turn_type] for s in validation_data_b[turn_type][cat]}
         common_ids = set(samples_a_dict.keys()).intersection(samples_b_dict.keys())
 
         for sample_id in common_ids:
-            # (Keep logic to find sample_a, sample_b, turn_type_a, category_a)
             sample_a = samples_a_dict.get(sample_id)
             sample_b = samples_b_dict.get(sample_id)
-            if not sample_a or not sample_b: continue # Should not happen with intersection, but safety check
+            if not sample_a or not sample_b: continue
 
             turn_type_a, category_a = None, None
             for tt in ["singleturn", "multiturn"]:
@@ -424,18 +485,20 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
             if turn_type_a and category_a:
                  category_metrics = validation_data_a.get("evaluation_criteria", {}).get(turn_type_a, {}).get(category_a, [])
                  if metric in category_metrics:
-                     # (Keep checks for history/context requirements)
                      history_a = sample_a.get('history')
                      pair_has_history = isinstance(history_a, list) and len(history_a) > 0
-                     if metric_requires_history and not pair_has_history: continue
+                     # Add context check if needed for pairwise
+                     # retrieved_contexts_a = sample_a.get('retrieved_contexts')
+                     # pair_has_context = retrieved_contexts_a is not None and (isinstance(retrieved_contexts_a, list) and retrieved_contexts_a)
 
-                     # Calculate *standard* vote count for pairwise
+                     if metric_requires_history and not pair_has_history: continue
+                     # if metric_strictly_requires_context and not pair_has_context: continue # Example
+
                      ratings_data = user_ratings.get(sample_id, {}).get(metric, {})
-                     vote_count = len(ratings_data.get("votes", []))
+                     vote_count = len(ratings_data.get("votes", [])) # Standard count for pairwise
                      entities_with_votes.append(((sample_a, sample_b), vote_count))
 
     else: # Single/Multi-turn metric
-        # (Keep existing logic to iterate through samples)
         for turn_type in ["singleturn", "multiturn"]:
             if turn_type in validation_data_a:
                 for category, samples in validation_data_a[turn_type].items():
@@ -444,21 +507,22 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
                         for sample in samples:
                             sample_id = sample.get("id")
                             if sample_id:
-                                # (Keep checks for history/context requirements)
                                 retrieved_contexts = sample.get('retrieved_contexts')
-                                has_empty_context = not retrieved_contexts
+                                has_empty_context = retrieved_contexts is None or (isinstance(retrieved_contexts, list) and not retrieved_contexts)
                                 history = sample.get('history')
                                 has_history = isinstance(history, list) and len(history) > 0
 
                                 if is_context_relevance_metric and has_empty_context: continue
+                                if metric_strictly_requires_context and has_empty_context: continue # Check strict requirement
                                 if metric_requires_history and not has_history: continue
 
-                                # Calculate *effective* vote count using the helper
                                 ratings_data = user_ratings.get(sample_id, {}).get(metric, {})
+                                # Use validation_data_a here for context relevance calculation
                                 effective_vote_count = get_effective_vote_count(sample_id, metric, ratings_data, validation_data_a)
                                 entities_with_votes.append((sample, effective_vote_count))
 
-    # --- Step 2 & 3: Categorize and Order based on TARGET_VOTES (using effective counts) ---
+    # --- Step 2 & 3: Categorize and Order ---
+    # (Keep the sorting/shuffling logic)
     if not entities_with_votes:
         return []
 
@@ -474,14 +538,9 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
         else: # effective_count >= TARGET_VOTES
             at_or_over_target.append((entity, effective_count))
 
-    # Sort entities with 1 to TARGET_VOTES-1 votes (ascending by count)
     under_target.sort(key=lambda x: x[1])
-
-    # Shuffle the other groups randomly
     random.shuffle(zero_votes)
     random.shuffle(at_or_over_target)
-
-    # Combine the lists in the prioritized order
     combined_list = under_target + zero_votes + at_or_over_target
 
     # --- Step 4: Return only the entities ---
@@ -490,7 +549,7 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
 
 
 # --- format_chat_history, format_contexts_as_accordion ---
-# ... (Keep these functions as they are) ...
+# (Keep these functions as they are)
 def format_chat_history(history_list):
     """Formats a list of chat turns into a readable string for Markdown."""
     formatted_lines = []
@@ -506,9 +565,12 @@ def format_chat_history(history_list):
         elif role == 'system': prefix = "System" # Or decide to skip
 
         if prefix != "Unbekannt" or role == 'unknown':
-            formatted_lines.append(f"**{prefix}:** {html.escape(str(content))}") # Escape content here
+            # Escape content before adding prefix for safety
+            escaped_content = html.escape(str(content))
+            formatted_lines.append(f"**{prefix}:** {escaped_content}")
 
     return "\n\n".join(formatted_lines)
+
 
 def format_contexts_as_accordion(sources, full_contexts):
     """Formats lists of context sources and full texts into an HTML accordion."""
@@ -864,16 +926,15 @@ def generate_prompt(entity, metric, swap_options=False):
 
 
 # --- save_rating ---
-# (Keep this function as is - it correctly saves the tuple for local context relevance)
-def save_rating(sample_id, metric, rating, it_background, is_pairwise, swap_options, supabase_client=None, context_index=None): # Added context_index
+def save_rating(sample_id, metric, rating, it_background, is_pairwise, swap_options, supabase_client=None, context_index=None):
     ratings_key = "Experten" if it_background == "Ja" else "Crowd"
 
-    # Ensure base structure exists in session state BEFORE attempting to append
+    # Ensure base structure exists in session state
+    # (Keep existing session state update logic)
     if ratings_key not in st.session_state.ratings: st.session_state.ratings[ratings_key] = {}
     if sample_id not in st.session_state.ratings[ratings_key]: st.session_state.ratings[ratings_key][sample_id] = {}
     if metric not in st.session_state.ratings[ratings_key][sample_id]:
         st.session_state.ratings[ratings_key][sample_id][metric] = {"votes": [], "swap_history": []}
-    # Ensure lists exist if metric entry was already there but malformed
     if "votes" not in st.session_state.ratings[ratings_key][sample_id][metric] or not isinstance(st.session_state.ratings[ratings_key][sample_id][metric]["votes"], list):
         st.session_state.ratings[ratings_key][sample_id][metric]["votes"] = []
     if "swap_history" not in st.session_state.ratings[ratings_key][sample_id][metric] or not isinstance(st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"], list):
@@ -883,59 +944,52 @@ def save_rating(sample_id, metric, rating, it_background, is_pairwise, swap_opti
     # --- Local JSON Handling ---
     if MODE == "local":
         vote_to_save = rating
-        # --- Store context relevance vote as tuple (rating, index) ---
         if metric in ["context_relevance", "multiturn_context_relevance"] and context_index is not None:
             vote_to_save = (rating, context_index)
-        # --- END MODIFIED CONDITION ---
 
         st.session_state.ratings[ratings_key][sample_id][metric]["votes"].append(vote_to_save)
-
-        # Append swap option, ensuring list lengths stay synchronized
         swap_val = swap_options if is_pairwise else None
         st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"].append(swap_val)
 
-        # Ensure lengths match after append (should always match if logic is correct)
+        # (Keep consistency check and fix attempt)
         if len(st.session_state.ratings[ratings_key][sample_id][metric]["votes"]) != len(st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"]):
              st.error(f"INTERNAL ERROR after appending vote: Votes/Swap mismatch for {sample_id}/{metric}. Resetting swap history for this vote.")
-             # Attempt recovery: Pad swap history to match votes length
              votes_len = len(st.session_state.ratings[ratings_key][sample_id][metric]["votes"])
-             st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"] = st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"][:votes_len-1] + [swap_val]
+             current_swaps = st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"]
+             st.session_state.ratings[ratings_key][sample_id][metric]["swap_history"] = current_swaps[:votes_len-1] + [swap_val]
 
-
-        # Save immediately in local mode
-        save_ratings(st.session_state.ratings, None) # Pass None for supabase_client
+        save_ratings(st.session_state.ratings, None) # Save immediately
 
     # --- Supabase Handling ---
-    # This saves ONE rating event (either a single vote or one context vote)
-    elif MODE == "supabase" and supabase_client:
+    elif MODE == "supabase" and supabase_client: # Check if client is valid
         try:
             insert_data = {
                 "rater_type": ratings_key,
                 "sample_id": sample_id,
                 "metric": metric,
-                "vote": rating, # Store the raw rating value
+                "vote": rating,
                 "swap_positions": swap_options if is_pairwise else None,
-                "context_index": context_index # Add the context index (will be null if not context relevance)
-                # Add rater_id here if available, e.g., "rater_id": st.session_state.user_id
+                "context_index": context_index
+                # "rater_id": st.session_state.get("user_id") # Example if you add user tracking
             }
+            response = supabase_client.schema("api").table("ratings").insert(insert_data).execute()
 
-            response = supabase_client.schema("api").table("ratings").insert(insert_data).execute() # Adjust schema if needed
-
-            # --- DEBUGGING: Print response ---
-            st.sidebar.write(f"Supabase Response: {response}")
-            # --- END DEBUGGING ---
-
-            # Check for errors in the response
+            # More robust error checking based on Supabase client library structure
             if hasattr(response, 'error') and response.error:
                  st.error(f"Supabase insert error: {response.error}")
-                 st.sidebar.error(f"Supabase insert error: {response.error}")
-            # Check for data length, indicating success (might vary based on Supabase client version)
             # elif not hasattr(response, 'data') or not response.data:
-            #      st.warning("Supabase insert seemed to succeed, but no data returned in response.")
+                 # Some versions might return empty data on success, adjust if needed
+                 # st.warning("Supabase insert successful, but no data returned in response.")
+            # else:
+                 # st.sidebar.write(f"Supabase insert successful: {response.data}") # Optional success log
 
         except Exception as e:
             st.error(f"Error saving rating to Supabase: {e}")
-            st.exception(e) # Log full traceback
+            st.exception(e)
+    elif MODE == "supabase" and not supabase_client:
+         st.error("Cannot save rating: Supabase client not initialized.")
+
+
 
 
 # --- start_new_round ---
@@ -1145,8 +1199,6 @@ def main():
     # State Check: Ensure we have an entity to display
     if current_entity_for_display is None:
          st.warning("Zustandsfehler: Kein aktuelles Sample/Paar zum Anzeigen. Versuche, neue Runde zu starten.")
-         # Log details for debugging
-         st.write(f"State: is_pairwise={st.session_state.is_pairwise}, current_sample={st.session_state.current_sample}, current_pair={st.session_state.current_sample_pair}")
          start_new_round()
          # Check if the new round fixed it
          if not st.session_state.round_over:
