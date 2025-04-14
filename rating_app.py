@@ -93,7 +93,6 @@ def load_ratings(supabase_client):
     if MODE == "supabase":
         # ... (Keep existing Supabase load logic) ...
         # NOTE: This does NOT aggregate context relevance votes correctly yet.
-        # Requires rater_id in table and adjusted query.
         try:
             response = supabase_client.schema("api").table("ratings").select("*").execute()
             data = response.data
@@ -188,7 +187,7 @@ def save_ratings(ratings, supabase_client):
     # No need to remove vote_count as it's not stored persistently
     ratings_copy = json.loads(json.dumps(ratings)) # Deep copy for safety
 
-    # Perform consistency check before saving
+    # Perform consistency check before saving (Keep this part)
     for group in ratings_copy:
         for sample_id in ratings_copy[group]:
             for metric in ratings_copy[group][sample_id]:
@@ -206,84 +205,19 @@ def save_ratings(ratings, supabase_client):
                      # Re-check length after fix attempt
                      if len(ratings_copy[group][sample_id][metric]["votes"]) != len(ratings_copy[group][sample_id][metric]["swap_history"]):
                           st.error(f"--> FIX FAILED for {sample_id}/{metric}. Skipping save for this metric to avoid corruption.")
-                          # Consider how to handle this - maybe delete the metric entry? For now, just skip.
-                          # Or raise an exception?
                           continue # Skip saving this potentially corrupt metric entry
 
 
     if MODE == "supabase":
-        # ... (Keep existing Supabase save logic) ...
-        # NOTE: This saves individual context votes. Aggregation needs to happen on read.
-        try:
-            # Strategy: Delete existing rows for the session's ratings and insert fresh?
-            # Or assume append-only log? Current logic implies append.
-            # Let's refine the insert logic slightly.
-            data_to_insert = []
-            # We need to iterate through the *in-memory* structure to decide what to insert.
-            # This assumes each call to save_rating corresponds to ONE new vote/set of votes.
-            # The current save_ratings saves the *entire* state, which is inefficient for Supabase append model.
-            # --> REVISITING this: save_ratings should likely only save the *newly added* vote.
-            # --> The current structure saves EVERYTHING every time. Let's keep it for now, but it's not ideal for Supabase.
+        # --- REMOVE THE BULK INSERT LOGIC ---
+        # The actual saving to Supabase happens individually in the save_rating function.
+        # This function (save_ratings) is called in local mode to overwrite the file,
+        # but in Supabase mode, the individual inserts in save_rating are sufficient.
+        # You might log a message here if needed, but no database operation is required.
+        # st.info("Supabase mode: Individual ratings saved via save_rating.")
+        pass # Nothing to do here for saving
 
-            # Clear table and bulk insert (Simpler for full state save, but destructive)
-            # Option 1: Delete all rows first (Use with caution!)
-            # st.info("Clearing existing Supabase ratings before inserting current state...")
-            # supabase_client.schema("api").table("ratings").delete().neq("id", -1).execute() # Deletes everything!
-
-            # Option 2: Prepare bulk insert data from current state
-            st.info("Preparing bulk insert data for Supabase...")
-            all_rows_to_insert = []
-            for rater_type, sample_data in ratings_copy.items():
-                for sample_id, metric_data in sample_data.items():
-                    for metric, vote_data in metric_data.items():
-                        votes = vote_data.get("votes", [])
-                        swaps = vote_data.get("swap_history", [None] * len(votes))
-
-                        is_context_relevance = metric in ["context_relevance", "multiturn_context_relevance"]
-
-                        for i, vote in enumerate(votes):
-                            swap_position = swaps[i] if i < len(swaps) else None
-                            context_idx = None
-                            actual_vote = vote
-
-                            if is_context_relevance and MODE == "local" and isinstance(vote, (list, tuple)) and len(vote) == 2:
-                                # Unpack local context vote tuple
-                                actual_vote, context_idx = vote
-                            elif is_context_relevance and MODE == "supabase":
-                                # How to get context_idx here? It's not stored this way in memory.
-                                # This highlights the issue with the current Supabase load/save pattern.
-                                # We'll assume context_idx is null for now when saving from aggregated state.
-                                pass # context_idx remains None
-
-                            all_rows_to_insert.append({
-                                "rater_type": rater_type,
-                                "sample_id": sample_id,
-                                "metric": metric,
-                                "vote": actual_vote, # Save the actual rating value
-                                "swap_positions": swap_position if metric in PAIRWISE_METRICS else None,
-                                "context_index": context_idx # Save index if available (mainly from local tuple)
-                            })
-
-            # Perform Bulk Insert (consider deleting first if you want overwrite behavior)
-            if all_rows_to_insert:
-                chunk_size = 500 # Supabase might have limits
-                st.info(f"Inserting {len(all_rows_to_insert)} rating rows into Supabase...")
-                for i in range(0, len(all_rows_to_insert), chunk_size):
-                    chunk = all_rows_to_insert[i:i+chunk_size]
-                    response = supabase_client.schema("api").table("ratings").insert(chunk).execute()
-                    if hasattr(response, 'error') and response.error:
-                         st.error(f"Supabase bulk insert error: {response.error}")
-                         # Potentially break or log which chunk failed
-                st.info("Supabase insert finished.")
-            else:
-                 st.info("No rating data to insert into Supabase.")
-
-
-        except Exception as e:
-            st.error(f"Error saving ratings to Supabase: {e}")
-            st.exception(e) # Show full traceback
-
-    else: # local mode
+    else: # local mode (Keep this part as is)
         try:
             with open(DATA_FILE, "w", encoding="utf-8") as f: # Ensure correct encoding
                 json.dump(ratings_copy, f, indent=4, ensure_ascii=False) # Use ensure_ascii=False for non-latin chars
@@ -291,6 +225,7 @@ def save_ratings(ratings, supabase_client):
             st.error(f"Error saving ratings locally to {DATA_FILE}: {e}")
         except Exception as e:
              st.error(f"Unexpected error saving ratings locally: {e}")
+
 
 
 # --- MODIFIED get_lowest_coverage_metric ---
@@ -983,10 +918,17 @@ def save_rating(sample_id, metric, rating, it_background, is_pairwise, swap_opti
                 "context_index": context_index # Add the context index (will be null if not context relevance)
                 # Add rater_id here if available, e.g., "rater_id": st.session_state.user_id
             }
-            response = supabase_client.schema("api").table("ratings").insert(insert_data).execute()
+
+            response = supabase_client.schema("api").table("ratings").insert(insert_data).execute() # Adjust schema if needed
+
+            # --- DEBUGGING: Print response ---
+            st.sidebar.write(f"Supabase Response: {response}")
+            # --- END DEBUGGING ---
+
             # Check for errors in the response
             if hasattr(response, 'error') and response.error:
                  st.error(f"Supabase insert error: {response.error}")
+                 st.sidebar.error(f"Supabase insert error: {response.error}")
             # Check for data length, indicating success (might vary based on Supabase client version)
             # elif not hasattr(response, 'data') or not response.data:
             #      st.warning("Supabase insert seemed to succeed, but no data returned in response.")
@@ -1129,22 +1071,21 @@ st.session_state.setdefault("is_pairwise", False)
 
 # Initialize Supabase client or load local ratings
 supabase_client = None
-if 'ratings' not in st.session_state or not st.session_state.ratings: # Load only if not already loaded
-    if MODE == "supabase":
-        try:
-            supabase_client = init_supabase()
-            st.session_state.ratings = load_ratings(supabase_client)
-        except ValueError as e:
-            st.error(f"Supabase initialization failed: {e}")
-            st.stop()
-        except Exception as e:
-            st.error(f"An unexpected error during Supabase setup: {e}")
-            st.stop()
-    elif MODE == "local":
-        st.session_state.ratings = load_ratings(None)
-    else:
-        st.error(f"Invalid MODE '{MODE}'. Use 'local' or 'supabase'.")
+if MODE == "supabase":
+    try:
+        supabase_client = init_supabase()
+        st.session_state.ratings = load_ratings(supabase_client)
+    except ValueError as e:
+        st.error(f"Supabase initialization failed: {e}")
         st.stop()
+    except Exception as e:
+        st.error(f"An unexpected error during Supabase setup: {e}")
+        st.stop()
+elif MODE == "local":
+    st.session_state.ratings = load_ratings(None)
+else:
+    st.error(f"Invalid MODE '{MODE}'. Use 'local' or 'supabase'.")
+    st.stop()
 
 # --- Main Function ---
 def main():
