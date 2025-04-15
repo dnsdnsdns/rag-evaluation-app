@@ -7,12 +7,12 @@ import supabase
 import html
 import markdown
 from collections import defaultdict, Counter # Added Counter
-from prompt_templates import evaluation_templates, general_intro_prompt
+from prompt_templates import evaluation_templates
 
 # ... (Keep other constants: DATA_FILE, VALIDATION_FILE_A/B, MODE, TARGET_VOTES, SAMPLES_PER_ROUND, PAIRWISE_METRICS) ...
 DATA_FILE = "data/ratings_data.json"
-VALIDATION_FILE_A = "data/validationset.json"
-VALIDATION_FILE_B = "data/validationset.json"
+VALIDATION_FILE_A = "data/validationset-test.json"
+VALIDATION_FILE_B = "data/validationset-test.json"
 MODE = "supabase"
 TARGET_VOTES = 3
 SAMPLES_PER_ROUND = 3
@@ -429,7 +429,7 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
                  st.warning(f"Coverage Calc Warning: Mismatch count for metric {metric}: {len(effective_counts_list)} vote counts vs {num_entities} entities from map. Using map count.")
             average_votes = total_effective_votes / num_entities
             metric_coverage[metric] = average_votes
-            # st.write(f"Metric: {metric}, Entities: {num_entities}, AvgVotes: {average_votes:.2f}") # DEBUG
+            st.write(f"Metric: {metric}, Entities: {num_entities}, AvgVotes: {average_votes:.2f}") # DEBUG
         else:
             metric_coverage[metric] = float('inf') # Assign high coverage if no entities apply
             # st.write(f"Metric: {metric}, Entities: 0, Coverage: INF") # DEBUG
@@ -585,7 +585,7 @@ def format_contexts_as_accordion(sources, full_contexts):
     """Formats lists of context sources and full texts into an HTML accordion."""
     if not sources or not full_contexts or not isinstance(sources, list) or not isinstance(full_contexts, list) or len(sources) != len(full_contexts):
         # Don't show error to user, just return informative placeholder
-        return '<div class="context-accordion-container"><h4>Verfügbarer Kontext:</h4><p><em>[Kontextdaten fehlen oder sind inkonsistent.]</em></p></div>'
+        return '<div class="context-accordion-container"><h4>Verfügbarer Kontext:</h4><p><em>[Kein Kontext vorhanden.]</em></p></div>'
 
     accordion_html = '<div class="context-accordion-container"><h4>Verfügbarer Kontext:</h4>'
     if not sources: # Handle case where lists are empty
@@ -1083,13 +1083,45 @@ def update_context_rating(context_idx, radio_widget_key):
 
 # --- Main Function ---
 def main():
-    st.title("RAG Answer Rating App")
+    st.title("Bewertung von Chatbot-Antworten")
 
     # --- Initial User Setup ---
     if not st.session_state.app_started:
         # ... (keep existing setup logic) ...
-        st.write("Willkommen! Bitte geben Sie Ihren IT-Hintergrund an.")
-        it_background_choice = st.radio("IT-Hintergrund:", ("Ja", "Nein"), key="it_bg_radio", horizontal=True, index=None)
+        st.markdown("""
+        ### 🎓 Hintergrund der Studie
+
+        Diese Umfrage wird im Rahmen einer **Masterarbeit** im Studiengang Data Science durchgeführt. Ziel ist es die **Qualität eines Chatbots** zu untersuchen. Dabei wird gemessen, wie stark die Einschätzungen von Menschen mit denen großer Sprachmodelle  übereinstimmen.
+                    
+        ---
+
+        ### 🤖 Zum Chatbot
+
+        Der Chatbot wurde für einen Anbieter von **IT-Seminaren** entwickelt und beantwortet Fragen rund um das Seminarprogramm.
+
+        Technisch basiert der Bot auf dem **RAG-Prinzip (Retrieval-Augmented Generation)**. Das bedeutet, er sucht zuerst passende Informationen aus einer Wissensdatenbank (Kontext) und erstellt daraufhin eine Antwort.
+
+        ---
+
+        ### 📝 Ablauf der Bewertung
+
+        Sie bewerten **ein bestimmtes Kriterium** anhand von **10 Beispielen**.
+        Diese Beispiele sind unterschiedlich umfangreich und stammen teils aus realen Anfragen, teils sind sie zu Testzwecken erstellt.
+
+        ---
+
+        ### 🧑‍💻 Vor dem Start:
+
+        Bitte geben Sie an, ob Sie über einen **IT-Hintergrund** verfügen (z. B. durch Ausbildung, Studium oder Beruf).
+        """)
+
+        it_background_choice = st.radio(
+            "IT-Hintergrund:",
+            ("Ja", "Nein"),
+            key="it_bg_radio",
+            horizontal=True,
+            index=None
+        )
         if st.button("Start", key="start_btn"):
             if it_background_choice is None:
                 st.warning("Bitte wählen Sie eine Option.")
@@ -1104,7 +1136,7 @@ def main():
     # --- Round Management & Completion Check ---
     if st.session_state.round_over:
         if st.session_state.round_count > 0:
-             st.success(f"Runde {st.session_state.round_count} abgeschlossen!")
+             st.success(f"Danke für die Teilnahme!")
         # Check if there's potentially more work before showing the button
         # We can try to start a new round silently to see if a metric is found
         # Note: This might be slightly slow if coverage calculation is heavy
@@ -1154,7 +1186,7 @@ def main():
         f"""
         <div style="display: flex; justify-content: center; margin-bottom: 20px;">
             <div style="border: 1px solid #ccc; border-radius: 10px; padding: 10px; text-align: center; width: 100%;">
-                Beispiel {st.session_state.entity_count + 1} / {st.session_state.num_entities_this_round} (Runde {st.session_state.round_count})
+                Beispiel {st.session_state.entity_count + 1} / {st.session_state.num_entities_this_round}
             </div>
         </div>
         """,
@@ -1163,7 +1195,6 @@ def main():
 
 
     # Display the general intro + specific instruction
-    st.markdown(f"**Aufgabe:** {general_intro_prompt}")
     instruction = evaluation_templates.get(st.session_state.current_metric, {}).get("prompt", "[Anweisung fehlt]")
     st.markdown(f'<div class="instruction-section" style="background-color: #eef; padding: 10px; border-radius: 5px; margin-bottom: 15px;">{instruction}</div>', unsafe_allow_html=True)
 
@@ -1265,8 +1296,13 @@ def main():
         if st.session_state.get('current_rating_dict_key') != rating_dict_key:
             st.session_state.context_ratings = {}
             st.session_state.current_rating_dict_key = rating_dict_key
+        
+        metric_config = evaluation_templates.get(st.session_state.current_metric, {})
+        final_question = metric_config.get("final_question", "Bitte bewerten:") # Fallback text
 
-        st.subheader("Bewerten Sie jeden Kontext:")
+        # --- REMOVED: st.markdown(f"**{final_question}**") ---
+        st.subheader("Bewerten Sie jeden einzelnen Kontext:")
+
         all_context_radios_rendered = True
 
         if num_contexts > 0:
@@ -1281,7 +1317,9 @@ def main():
                 expander_label = f"Kontext {i+1}: {html.escape(str(sources_list[i] if sources_list[i] is not None else '[Quelle fehlt]'))}"
                 with st.expander(expander_label, expanded=False):
                     full_context = full_contexts_list[i] if full_contexts_list[i] is not None else "[Kontext fehlt]"
-                    st.markdown(f"```\n{full_context}\n```")
+                    st.text(f"{full_context}")
+
+                    st.markdown(f"**{final_question}**") # Display the question here
 
                     radio_key = f"context_rating_{rating_dict_key}_{i}"
                     current_selection = st.session_state.context_ratings.get(i, None)
@@ -1291,6 +1329,7 @@ def main():
                             index_to_select = str_rating_scale_ctx.index(str(current_selection))
                         except ValueError:
                             index_to_select = None
+
 
                     st.radio(
                          f"Relevanz Kontext {i+1}",
@@ -1352,7 +1391,7 @@ def main():
 
         # Display the radio button - str_rating_scale must be valid list here
         st.session_state.user_rating = st.radio(
-            "Ihre Bewertung:",
+            f"Bitte bewerte: {evaluation_templates[st.session_state.current_metric]['final_question']}",
             str_rating_scale,
             key=radio_key,
             horizontal=True,
