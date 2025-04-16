@@ -1086,6 +1086,18 @@ def update_context_rating(context_idx, radio_widget_key):
         st.session_state.context_ratings[context_idx] = new_value
     # else: Optionally handle if the widget state is None, though unlikely for radio
 
+# --- Callback function for standard radio buttons ---
+def update_standard_rating(radio_widget_key):
+    """
+    Callback to update st.session_state.user_rating when a standard
+    radio button changes.
+    """
+    new_value = st.session_state.get(radio_widget_key)
+    if new_value is not None:
+        st.session_state.user_rating = new_value
+    # else: Handle None case if necessary, though unlikely for radio
+
+
 
 # --- Main Function ---
 def main():
@@ -1376,12 +1388,6 @@ def main():
                 str_rating_scale = [str(item) for item in rating_scale]
              except TypeError:
                  st.error(f"Interner Fehler: Rating Scale für Metric {st.session_state.current_metric} ist kein gültiger Iterable.")
-                 # Add skip button?
-                 if st.button("Item überspringen (Scale Fehler)", key="skip_scale_error_type"):
-                      # ... (advance logic) ...
-                      st.session_state.entity_count += 1
-                      # ... (rest of advance logic) ...
-                      st.rerun()
                  return # Stop if scale is invalid type
 
         # Now, str_rating_scale should be a list. Proceed to find the index.
@@ -1396,12 +1402,14 @@ def main():
 
 
         # Display the radio button - str_rating_scale must be valid list here
-        st.session_state.user_rating = st.radio(
+        st.radio(
             f"Bitte bewerte: {evaluation_templates[st.session_state.current_metric]['final_question']}",
             str_rating_scale,
             key=radio_key,
             horizontal=True,
-            index=index_to_select
+            index=index_to_select,
+            on_change=update_standard_rating, # Use the new callback
+            kwargs=dict(radio_widget_key=radio_key) # Pass the key to the callback
         )
 
 
