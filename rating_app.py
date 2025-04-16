@@ -7,16 +7,22 @@ import supabase
 import html
 import markdown
 from collections import defaultdict, Counter # Added Counter
+from dotenv import load_dotenv
 from prompt_templates import evaluation_templates
+
+load_dotenv() 
 
 # ... (Keep other constants: DATA_FILE, VALIDATION_FILE_A/B, MODE, TARGET_VOTES, SAMPLES_PER_ROUND, PAIRWISE_METRICS) ...
 DATA_FILE = "data/ratings_data.json"
-VALIDATION_FILE_A = "data/validationset-test.json"
-VALIDATION_FILE_B = "data/validationset-test.json"
+VALIDATION_FILE_A = "data/validationset.json"
+VALIDATION_FILE_B = "data/validationset.json"
 MODE = "supabase"
 TARGET_VOTES = 3
 SAMPLES_PER_ROUND = 3
 PAIRWISE_METRICS = {"quality_pairwise", "multiturn_quality_pairwise"}
+# read environment variable and set default to production
+APP_ENV = os.environ.get("APP_ENV", "production").lower()
+SUPABASE_TABLE_NAME = "ratings_dev" if APP_ENV == "development" else "ratings"
 
 @st.cache_data # Cache the result of this function
 def load_validation_sets(file_a, file_b):
@@ -224,7 +230,7 @@ def load_ratings(supabase_client): # Pass the client
              return ratings # Return empty if client failed
         try:
             # ... (rest of Supabase load logic using supabase_client) ...
-            response = supabase_client.schema("api").table("ratings").select("*").execute()
+            response = supabase_client.schema("api").table(SUPABASE_TABLE_NAME).select("*").execute()
             # ... (processing logic) ...
             data = response.data
 
@@ -429,7 +435,7 @@ def get_lowest_coverage_metric(validation_data_a, validation_data_b, ratings, it
                  st.warning(f"Coverage Calc Warning: Mismatch count for metric {metric}: {len(effective_counts_list)} vote counts vs {num_entities} entities from map. Using map count.")
             average_votes = total_effective_votes / num_entities
             metric_coverage[metric] = average_votes
-            st.write(f"Metric: {metric}, Entities: {num_entities}, AvgVotes: {average_votes:.2f}") # DEBUG
+            # st.write(f"Metric: {metric}, Entities: {num_entities}, AvgVotes: {average_votes:.2f}") # DEBUG
         else:
             metric_coverage[metric] = float('inf') # Assign high coverage if no entities apply
             # st.write(f"Metric: {metric}, Entities: 0, Coverage: INF") # DEBUG
@@ -898,7 +904,7 @@ def save_rating(sample_id, metric, rating, it_background, is_pairwise, swap_opti
                 "context_index": context_index
                 # "rater_id": st.session_state.get("user_id") # Example if you add user tracking
             }
-            response = supabase_client.schema("api").table("ratings").insert(insert_data).execute()
+            response = supabase_client.schema("api").table(SUPABASE_TABLE_NAME).insert(insert_data).execute()
 
             # More robust error checking based on Supabase client library structure
             if hasattr(response, 'error') and response.error:
@@ -1110,7 +1116,7 @@ def main():
 
         ---
 
-        ### 🧑‍💻 Vor dem Start:
+        ### 🧑‍💻 Vor dem Start
 
         Bitte geben Sie an, ob Sie über einen **IT-Hintergrund** verfügen (z. B. durch Ausbildung, Studium oder Beruf).
         """)
