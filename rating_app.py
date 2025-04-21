@@ -1124,7 +1124,10 @@ def main():
         ### 📝 Ablauf der Bewertung
 
         Sie bewerten **ein bestimmtes Kriterium** anhand von **10 Beispielen**.
-        Diese Beispiele sind unterschiedlich umfangreich und stammen teils aus realen Anfragen, teils sind sie zu Testzwecken erstellt.
+                    
+        Diese Beispiele sind unterschiedlich umfangreich und stammen teils aus realen Anfragen, teils sind sie zu Testzwecken erstellt. Einige Beispiele enthalten möglicherweise **Datumsangaben aus der Vergangenheit**. Dies liegt daran, dass die Testdaten zu einem früheren Zeitpunkt erstellt wurden und soll **keine Auswirkung auf Ihre Bewertung** haben. 
+                    
+        Es kann auch **mehrmals** an der Umfrage teilgenommen werden, um verschiedene Kriterien zu bewerten. Dazu einfach am Ende einer Runde auf **"Nächste Runde starten"** klicken oder die Umfrage erneut aufrufen.
 
         ---
 
