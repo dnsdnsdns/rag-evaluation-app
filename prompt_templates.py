@@ -72,7 +72,7 @@ evaluation_templates = {
       "final_question": "Beschränkt sich die Antwort auf eine Beschreibung des Chatbot-Zwecks, ohne die Frage im Kontext des Gesprächsverlaufs inhaltlich zu beantworten?"
     },
     "quality_pairwise": {
-      "prompt": "\n\n**Aufgabe:**\nDu erhältst eine **Frage** und **zwei Antworten** von verschiedenen Chatbots. Wähle die qualitativ bessere Antwort aus.\n\nBitte lies alle Texte **sorgfältig und vollständig**, bevor du deine Bewertung abgibst.\n\n---\n\n**Bewertungsskala:**\n- **A** – Antwort A ist besser.\n- **B** – Antwort B ist besser.\n- **Unentschieden** - Beide Antworten sind gleichwertig.",
+      "prompt": "\n\n**Aufgabe:**\nDu erhältst eine **Frage** und **zwei Antworten** von verschiedenen Chatbots. Wähle die qualitativ bessere Antwort aus.\n\nBitte lies alle Texte **sorgfältig und vollständig**, bevor du deine Bewertung abgibst.\n\n---\n\n**Definition:**\n\nBewerte nach dem qualitativen Gesamteindruck.\n\n---\n\n**Bewertungsskala:**\n- **A** – Antwort A ist besser.\n- **B** – Antwort B ist besser.\n- **Unentschieden** - Beide Antworten sind gleichwertig.",
       "required_attributes": ["answer_a", "answer_b", "query"],
       "rating_scale": ["A", "B", "Unentschieden"],
       "final_question": "Welches ist die bessere Antwort?"
