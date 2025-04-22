@@ -9604,6 +9604,136 @@
           "Seminartitel: Stackable Grundlagen Workshop\nBuchungsnummer: STACK-01\nKategorie: Big Data und KI\nBeschreibung: In diesem Workshop erhalten Sie einen Einblick in die wichtigsten Komponenten der Stackable Data Platform. Sie bekommen eine Einführung in die darunter liegende Infrastruktur, Kubernetes. Darauf aufbauend lernen Sie die wichtigsten Komponenten von <a href=\"https://stackable.tech/de/\" target=\"_blank\"> Stackable</a> kennen, und wie daraus ein Cluster aufgebaut werden kann. Zusätzlich lernen Sie in ersten einfachen Anwendungsbeispielen die zahlreichen Stackable Dienste kennen. Gerne kann dieser Workshop auf Ihre Interessen und Kenntnisse individuell angepasst werden. Zusätzlich kann der Workshop online oder als Inhouse-Veranstaltung gebucht werden. Wir richten uns hier nach ihren Bedürfnissen. Sprechen Sie uns gerne an.\nInhalte: - Einführung in Big Data, Kubernetes und Stackable \r\n- Kubernetes \r\n- Aufbau Cluster \r\n- Anwendungsbeispiele\r\n- Umgang mit stackablectl\r\n- Operators, Stacklets, Stacks \r\n- Storagelösungen: Apache Hadoop HDFS, MiniO \r\n- Data Security: OpenPolicyAgent (OPA) \r\n- Komplexe Anwendungsbeispiele\nZiele: - Sie bekommen eine Einführung in das Thema \"Big Data\" \r\n- Sie lernen die Grundlagen von Kubernetes kennen \r\n- Sie erhalten einen Überblick über die Stackable Data Platform \r\n- Sie sind in der Lage ein Stackable Cluster aufzubauen und zu administrieren \r\n- Falls gewünscht, betrachten wir gemeinsam erste Einsatzmöglichkeiten der Stackable Data Platform in ihrem Unternehmen\r\n- Sie können erste Daten verarbeitende Jobs auf dem Cluster ausführen\nZielgruppe: Anwendungsentwickler, Administratoren, Systemintegratoren, IT-Architekten, IT-Consultants, Data Engineers, Data Scientists\nVoraussetzungen: Teilnahme am Seminar \"Unix/Linux Grundlagen für Einsteiger\" (BS-01) oder vergleichbare Kenntnisse.\nDauer: 2 Tage\nKursgebühren: Preis auf Anfrage\nLink: https://seminare.ordix.de/seminare/big-data-und-ki/stackable-grundlagen-workshop.html\nTermine: Aktuell keine Termine verfügbar",
           "Seminartitel: Power BI für Fachanwender kostenloses Webinar\nBuchungsnummer: PW-BI-01\nKategorie: Kostenlose Tech Talks und Webinare\nBeschreibung: Ob Kleinunternehmen oder Konzern, ob Handwerksbetrieb oder Versicherung: Datengestützte Entscheidungen sind für Unternehmen zunehmend von elementarer Bedeutung. Wie Microsoft Power BI dabei unterstützen kann und worauf es dabei zu achten gilt, zeigen wir in diesem kostenlosen Webinar.\nInhalte: - Business Intelligence (BI): Grundlagen\r\n- Wie aus Daten Wissen entstehen kann\r\n- Datengestützte Entscheidungsfindung und ihre Herausforderung\r\n- Live-Demo: von Daten zu Entscheidung mit Microsoft Power BI\nZiele: Ob Kleinunternehmen oder Konzern, ob Handwerksbetrieb oder Versicherung: Datengestützte Entscheidungen sind für Unternehmen zunehmend von elementarer Bedeutung. Mittelfristig werden insbesondere Unternehmen, die nicht in der Lage sind, Entscheidungen auf Grundlage einer stabilen Datenbasis zu treffen, Schwierigkeiten haben, mit dem Wettbewerb Schritt zu halten. Es sind daher meist Fachabteilungen, die ein modernes Business Intelligence (BI) Tool fordern, um Daten sammeln, analysieren und visualisieren zu können. Sie wollen mit dessen Unterstützung ihr Unternehmen so nachhaltiger steuern und bessere Entscheidungen treffen können. Warum Business Intelligence (BI) auch in anderen Bereichen immer wichtiger wird, worauf es bei der Einführung einer modernen BI Plattform zu achten gilt, wie Daten zu Wissen und auf Basis von Wissen Entscheidungen getroffen werden können, zeigen wir in der ersten Hälfte dieses kostenlosen Webinars. In der zweiten Hälfte wirds praktisch: am Beispiel von Microsoft Power BI zeigen wir in einer Live Demo, wie Daten aus unterschiedlichen Quellen angebunden, aufbereitet und so visualisiert werden können, um sie für datengestützte Entscheidungsfindung nutzen zu können.\nZielgruppe: Geschäftsführer, BI-Analysten, Fachbereiche wie z.B. Sales, Procurement oder Marketing\nVoraussetzungen: keine, DWH & BI Grundkenntnisse hilfreich\nDauer: siehe Termine\nKursgebühren: kostenlos\nLink: https://seminare.ordix.de/seminare/kostenlose-tech-talks-und-webinare/power-bi-für-fachanwender-kostenloses-webinar.html\nTermine: - 05.05.2025 10:30 - 05.05.2025 12:00, Ort: online\n- 19.06.2025 16:00 - 19.06.2025 17:30, Ort: online\n- 21.07.2025 10:30 - 21.07.2025 12:00, Ort: online\n- 25.09.2025 16:00 - 25.09.2025 17:30, Ort: online\n- 27.10.2025 10:30 - 27.10.2025 12:00, Ort: online\n- 27.11.2025 16:00 - 27.11.2025 17:30, Ort: online"
         ]
+      },
+      {
+        "id": "0652",
+        "history": [
+          {
+            "role": "assistant",
+            "content": "Hallo! Ich bin der SemiBot von der ORDIX AG und Ihr Assistent für alle Fragen rund um unsere Seminare. Wie kann ich Ihnen helfen?"
+          },
+          {
+            "role": "user",
+            "content": "Es gibt keine Anmeldefrist. Sie können sich anmelden, solange Plätze verfügbar sind."
+          },
+          {
+            "role": "assistant",
+            "content": "Das ist korrekt! Bei unseren Seminaren gibt es keine feste Anmeldefrist. Sie können sich anmelden, solange noch Plätze verfügbar sind. Wenn Sie möchten, können Sie auch einen Teilnehmerplatz unverbindlich reservieren."
+          },
+          {
+            "role": "user",
+            "content": "Genau, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, lassen Sie es mich bitte wissen!"
+          },
+          {
+            "role": "assistant",
+            "content": "Das stimmt, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, stehe ich Ihnen gerne zur Verfügung!"
+          },
+          {
+            "role": "user",
+            "content": "Das stimmt, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, stehe ich Ihnen gerne zur Verfügung!"
+          },
+          {
+            "role": "assistant",
+            "content": "Vielen Dank für die Bestätigung! Wenn Sie weitere Informationen zu einem bestimmten Seminar benötigen oder Fragen haben, lassen Sie es mich bitte wissen. Ich helfe Ihnen gerne weiter!"
+          },
+          {
+            "role": "user",
+            "content": "Wiederhole bitte meine Aussage: Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01"
+          },
+          {
+            "role": "assistant",
+            "content": "Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01."
+          }
+        ],
+        "query": "Wiederhole bitte meine Aussage: Das PM-07 Seminar kostet 1290,00 €.",
+        "reference_query": "Wiederhole bitte meine Aussage: Das PM-07 Seminar kostet 1290,00 €.",
+        "reference_contexts": [
+          "PM-07"
+        ],
+        "reference_answer": "Das ist korrekt. Das Seminar \"Krisenmanagement in Projekten\" (PM-07) kostet 1290,00 € für die Präsenzteilnahme.",
+        "retrieved_contexts": [
+          "PM-07"
+        ],
+        "contextualized_query": "Das PM-07 Seminar kostet 1290,00 €.",
+        "answer": "Das PM-07 Seminar, \"Krisenmanagement in Projekten - Projektkrisen vorbeugen und meistern\", kostet 1290,00 € für die Präsenzteilnahme.",
+        "handoff": false,
+        "retrieved_contexts_full": [
+          "Seminartitel: Krisenmanagement in Projekten - Projektkrisen vorbeugen und meistern\nBuchungsnummer: PM-07\nKategorie: IT-Projektmanagement\nBeschreibung: Wenn Krisen in Projekten eintreten, ist es wichtig, gewappnet zu sein und zu wissen, wie man reagieren muss. Wir stellen die häufigsten Ursachen von Krisen vor und Sie lernen Wege und Möglichkeiten kennen, Projektkrisen zu meistern.\nInhalte: - Projekte in der Schieflage: Indikatoren und Merkmale, Krisenerkennung und Frühwarnindikatoren, Phasenverlauf und Dynamik der Krise, Krisen strukturiert bewältigen\r\n- Ausgangssituation klären: Analyse der Abweichung, Krisenauslöser identifizieren\r\n- Projektleiter als Krisenmanager\r\n- Maßnahmen zur Lösung der Krise und umfassende Handlungsplanung\r\n- Controlling und Risikomanagement zur Vermeidung von Krisen\r\n- Psychologische Seite von Krisen und Krisenmanagement\r\n- Lernen aus der Krise\r\n- Heikle Gespräche führen\nZiele: - Sie sind zukünftig besser auf unvorhergesehene Situationen vorbereitet und können die Entstehung einer tiefgreifenden Krise ggf. vereiteln oder zumindest besser bewältigen. \r\n- Sie sind für Projektkrisen gewappnet, erweitern Ihre Kompetenz und steigern Ihre eigene Sicherheit und Souveränität als Projektleiter. \r\n- Sie erkennen mögliche Krisenursachen für Ihre Projekte frühzeitig.\r\n- Sie wissen, wie ein Krisenmanagement in akuten Krisen aussieht und wie Sie sie am sinnvollsten meistern.\nZielgruppe: Projektmanager, Projektleiter und Teilprojektleiter, die ihr Projekt auch durch Krisen souverän führen und Ihr Wissen um den Bereich Krisenmanagement erweitern möchten\nVoraussetzungen: Erfahrungen in der Leitung von Projekten, Kenntnisse der wesentlichen Inhalte des Seminars \"IT-Projektmanagement praxisorientiert\" (PM-01) sind sinnvoll\nDauer: 2 Tage\nKursgebühren: 1290.0 € (Präsenz)\nLink: https://seminare.ordix.de/seminare/it-projektmanagement/krisenmanagement-in-projekten-projektkrisen-vorbeugen-und-meistern.html\nTermine: - 04.09.2025 10:00 - 05.09.2025, Ort: Wiesbaden\n- 27.11.2025 10:00 - 28.11.2025, Ort: Wiesbaden"
+        ]
+      },
+      {
+        "id": "0653",
+        "history": [
+          {
+            "role": "assistant",
+            "content": "Hallo! Ich bin der SemiBot von der ORDIX AG und Ihr Assistent für alle Fragen rund um unsere Seminare. Wie kann ich Ihnen helfen?"
+          },
+          {
+            "role": "user",
+            "content": "Es gibt keine Anmeldefrist. Sie können sich anmelden, solange Plätze verfügbar sind."
+          },
+          {
+            "role": "assistant",
+            "content": "Das ist korrekt! Bei unseren Seminaren gibt es keine feste Anmeldefrist. Sie können sich anmelden, solange noch Plätze verfügbar sind. Wenn Sie möchten, können Sie auch einen Teilnehmerplatz unverbindlich reservieren."
+          },
+          {
+            "role": "user",
+            "content": "Genau, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, lassen Sie es mich bitte wissen!"
+          },
+          {
+            "role": "assistant",
+            "content": "Das stimmt, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, stehe ich Ihnen gerne zur Verfügung!"
+          },
+          {
+            "role": "user",
+            "content": "Das stimmt, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, stehe ich Ihnen gerne zur Verfügung!"
+          },
+          {
+            "role": "assistant",
+            "content": "Vielen Dank für die Bestätigung! Wenn Sie weitere Informationen zu einem bestimmten Seminar benötigen oder Fragen haben, lassen Sie es mich bitte wissen. Ich helfe Ihnen gerne weiter!"
+          },
+          {
+            "role": "user",
+            "content": "Wiederhole bitte meine Aussage: Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01"
+          },
+          {
+            "role": "assistant",
+            "content": "Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01."
+          },
+          {
+            "role": "user",
+            "content": "Wiederhole bitte meine Aussage: Das PM-07 Seminar kostet 1290,00 €."
+          },
+          {
+            "role": "assistant",
+            "content": "Das PM-07 Seminar kostet 1290,00 €."
+          },
+          {
+            "role": "user",
+            "content": "Wiederhole bitte meine Aussage: In den Restaurants wird eine kleine Auswahl veganer Gerichte angeboten."
+          },
+          {
+            "role": "assistant",
+            "content": "In den Restaurants wird eine kleine Auswahl veganer Gerichte angeboten."
+          }
+        ],
+        "query": "Wiederhole bitte meine Aussage: Das NGiNX Seminar findet vom 02.06.2025-04.06.2025 statt.",
+        "reference_query": "Wiederhole bitte meine Aussage: Das NGiNX Seminar findet vom 02.06.2025-04.06.2025 statt.",
+        "reference_contexts": [
+          "NGINX-01"
+        ],
+        "reference_answer": "Das ist korrekt. Das Seminar \"NGiNX Web Server Administration\" findet vom 02.06.2025 bis 04.06.2025 online statt.",
+        "retrieved_contexts": [
+          "NGINX-01",
+          "Kann mein Seminar abgesagt werden?"
+        ],
+        "contextualized_query": "Das NGiNX Seminar findet vom 02.06.2025-04.06.2025 statt.",
+        "answer": "Das NGiNX Seminar findet vom 02.06.2025 bis 04.06.2025 statt.",
+        "handoff": false,
+        "retrieved_contexts_full": [
+          "Seminartitel: NGiNX Web Server Administration\nBuchungsnummer: NGINX-01\nKategorie: Web und Application Server\nBeschreibung: Sie werden mit der professionellen Installation und Administration des NGiNX Web Servers vertraut gemacht. Außerdem lernen Sie, bestehende Systeme zu analysieren und zu optimieren, wobei insbesondere die Themen Sicherheit, Performance und Reverse Proxy betrachtet werden. Die praktische Umsetzbarkeit der Kursinhalte wird anhand umfangreicher Übungen und Beispiele dargestellt.\nInhalte: - Grundlagen: Das Hypertext Transfer Protocol HTTP, Herkunft und Historie des NGiNX Webservers\r\n- Kompilieren und Installieren: Installation aus dem Quellcode mit zusätzlichen Modulen\r\n- Erste Konfiguration und Inbetriebnahme\r\n- Statischer Content\r\n- Dynamischer Content\r\n- Redirects und Reverse Proxy\r\n- HTTPS und Zugriffschutz\r\n- Logging & Monitoring\r\n- Sicherheit & Performance Tuning\nZiele: - Sie können einen NGiNX Server installieren, administrieren und konfigurieren.\r\n- Sie sind in der Lage, bestehende Systeme zu analysieren und zu optimieren.\r\n- Sie können NGiNX-Server-Probleme beheben.\nZielgruppe: Systemadministratoren und Netzwerkadministratoren\nVoraussetzungen: Kenntnisse des Betriebssystems Unix (Kenntnisse eines Editors, Shell-Kenntnisse) oder mindestens Teilnahme am Seminar \"Unix/Linux Grundlagen für Einsteiger\" (BS-01).\nDauer: 3 Tage\nKursgebühren: 1341.00 € (online)\nLink: https://seminare.ordix.de/seminare/web-und-application-server/nginx-web-server-administration.html\nTermine: - 02.06.2025 10:00 - 04.06.2025, Ort: online",
+          "Kann mein Seminar abgesagt werden?\nWir behalten uns vor, die Veranstaltung wegen zu geringer Nachfrage bzw. Teilnehmerzahl (bis spätestens 6 Kalendertage vor dem geplanten Veranstaltungstermin) oder aus sonstigen wichtigen, von uns nicht zu vertretenden Gründen (z. B. plötzliche Erkrankung des Referenten, höhere Gewalt) abzusagen. Bei einer Absage werden Sie umgehend vom Seminarteam informiert."
+        ]
       }
     ],
     "seminar-search": [
@@ -13858,307 +13988,6 @@
           },
           {
             "role": "user",
-            "content": "Es gibt keine Anmeldefrist. Sie können sich anmelden, solange Plätze verfügbar sind."
-          },
-          {
-            "role": "assistant",
-            "content": "Genau, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, lassen Sie es mich bitte wissen!"
-          },
-          {
-            "role": "user",
-            "content": "Genau, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, lassen Sie es mich bitte wissen!"
-          },
-          {
-            "role": "assistant",
-            "content": "Vielen Dank für die Bestätigung. Wenn Sie weitere Informationen zu unseren Seminaren benötigen oder Fragen haben, stehe ich Ihnen gerne zur Verfügung. Lassen Sie mich wissen, wie ich Ihnen helfen kann!"
-          },
-          {
-            "role": "user",
-            "content": "Vielen Dank für die Bestätigung. Wenn Sie weitere Informationen zu unseren Seminaren benötigen oder Fragen haben, stehe ich Ihnen gerne zur Verfügung. Lassen Sie mich wissen, wie ich Ihnen helfen kann!"
-          },
-          {
-            "role": "assistant",
-            "content": "Gerne! Wenn Sie Informationen zu einem bestimmten Seminar benötigen oder Fragen zu unseren Angeboten haben, lassen Sie es mich bitte wissen. Ich helfe Ihnen gerne weiter!"
-          },
-          {
-            "role": "user",
-            "content": "Wiederhole bitte meine Aussage: Gerne! Wenn Sie Informationen zu einem bestimmten Seminar benötigen oder Fragen zu unseren Angeboten haben, lassen Sie es mich bitte wissen. Ich helfe Ihnen gerne weiter!"
-          },
-          {
-            "role": "assistant",
-            "content": "Gerne! Wenn Sie Informationen zu einem bestimmten Seminar benötigen oder Fragen zu unseren Angeboten haben, lassen Sie es mich bitte wissen. Ich helfe Ihnen gerne weiter!"
-          }
-        ],
-        "query": "Wiederhole bitte meine Aussage: Im Seminarpreis sind Pausengetränke und Pausensnacks, ein gemeinsames Mittagessen pro Seminartag und die ausführlichen Seminarunterlagen enthalten.",
-        "reference_query": "Wiederhole bitte meine Aussage: Gerne! Wenn Sie Informationen zu einem bestimmten Seminar benötigen oder Fragen zu unseren Angeboten haben, lassen Sie es mich bitte wissen. Ich helfe Ihnen gerne weiter!",
-        "reference_contexts": [
-          "Was ist im Seminarpreis enthalten?",
-          "Wie ist die Verpflegung während des Seminars?"
-        ],
-        "reference_answer": "",
-        "retrieved_contexts": [
-          "Was ist im Seminarpreis enthalten?",
-          "Wie ist die Verpflegung während des Seminars?"
-        ],
-        "contextualized_query": "Wiederhole bitte meine Aussage: Im Seminarpreis sind Pausengetränke und Pausensnacks, ein gemeinsames Mittagessen pro Seminartag und die ausführlichen Seminarunterlagen enthalten.",
-        "answer": "Im Seminarpreis sind Pausengetränke und Pausensnacks, ein gemeinsames Mittagessen pro Seminartag und die ausführlichen Seminarunterlagen enthalten.",
-        "handoff": false,
-        "retrieved_contexts_full": [
-          "Was ist im Seminarpreis enthalten?\nIm Seminarpreis sind Getränke und Kekse sowie ein gemeinsames Mittagessen pro Seminartag enthalten (gilt für Präsenzseminare). Zudem erhalten Sie ausführliche Seminarunterlagen.",
-          "Wie ist die Verpflegung während des Seminars?\nIm Seminarpreis sind Pausengetränke und Pausensnacks sowie ein gemeinsames Mittagessen enthalten."
-        ]
-      },
-      {
-        "id": "0913",
-        "history": [
-          {
-            "role": "assistant",
-            "content": "Hallo! Ich bin der SemiBot von der ORDIX AG und Ihr Assistent für alle Fragen rund um unsere Seminare. Wie kann ich Ihnen helfen?"
-          },
-          {
-            "role": "user",
-            "content": "Es gibt keine Anmeldefrist. Sie können sich anmelden, solange Plätze verfügbar sind."
-          },
-          {
-            "role": "assistant",
-            "content": "Das ist korrekt! Bei unseren Seminaren gibt es keine feste Anmeldefrist. Sie können sich anmelden, solange noch Plätze verfügbar sind. Wenn Sie möchten, können Sie auch einen Teilnehmerplatz unverbindlich reservieren."
-          },
-          {
-            "role": "user",
-            "content": "Genau, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, lassen Sie es mich bitte wissen!"
-          },
-          {
-            "role": "assistant",
-            "content": "Das stimmt, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, stehe ich Ihnen gerne zur Verfügung!"
-          },
-          {
-            "role": "user",
-            "content": "Das stimmt, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, stehe ich Ihnen gerne zur Verfügung!"
-          },
-          {
-            "role": "assistant",
-            "content": "Vielen Dank für die Bestätigung! Wenn Sie weitere Informationen zu einem bestimmten Seminar benötigen oder Fragen haben, lassen Sie es mich bitte wissen. Ich helfe Ihnen gerne weiter!"
-          }
-        ],
-        "query": "Wiederhole bitte meine Aussage: Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01",
-        "reference_query": "Wiederhole bitte meine Aussage: Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01",
-        "reference_contexts": [
-          "P-PYTH-01"
-        ],
-        "reference_answer": "",
-        "retrieved_contexts": [
-          "P-PYTH-01"
-        ],
-        "contextualized_query": "Wiederhole bitte meine Aussage: Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01.",
-        "answer": "Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01.",
-        "handoff": false,
-        "retrieved_contexts_full": [
-          "Seminartitel: Python Programmierung Grundlagen\nBuchungsnummer: P-PYTH-01\nKategorie: Programmiersprachen\nBeschreibung: Python ist laut PYPL, der PopularitY of Programming Language, die zurzeit mit Abstand populärste Programmiersprache. Dies ist auf die einfache Syntax und die vielfältigen Einsatzgebiete zurückzuführen. So lassen sich in Python Skripte, aber auch komplexe Applikationen, Web-Back- und Frontends und Data Science Anwendungen realisieren. In diesem Seminar werden die notwendigen Kenntnisse vermittelt, um verschiedenste Problemstellungen mit Python zu lösen. Die einzelnen Elemente der Sprache werden Ihnen in praxisnahen Übungen vermittelt, die Ihnen in der späteren Praxis als Templates für eigene Programme dienen können. Neben den Seminarinhalten können die Teilnehmenden individuelle Fragen rund um Python im Kurs mit dem Dozenten und den anderen Teilnehmenden diskutieren. Der gegenseitige Austausch im Seminar ist meist besonders wertvoll. Zusätzlich zu den Übungen wird im Kurs an verschiedenen Stellen ein Quiz durchgeführt. Am Begriff Pythonic wird erläutert, was die Programmiersprache im Vergleich zu anderen Programmiersprachen besonders macht.\nInhalte: - Einführung in die Programmiersprache\r\n- Datentypen\r\n- Ein- und Ausgabe\r\n- Schleifen und Kontrollstrukturen\r\n- Arbeiten mit Modulen\r\n- Funktionen\r\n- Möglichkeiten der String-Formatierung\r\n- Sortieren und Funktionen als Objekte\r\n- Fehlerbehandlung (Exception Handling)\r\n- Arbeiten mit Dateien\r\n- Funktionen\r\n- Nutzung von Webservices\r\n- Zugriff auf Betriebssystemfunktionen\r\n- Reguläre Ausdrücke\nZiele: - Sie beherrschen die Grundlagen der Programmiersprache Python.\r\n- Sie können Python-Programme für verschiedene Anwendungsfälle schreiben und analysieren.\nZielgruppe: Jeder, der mit Python-Problemstellungen lösen möchte, insbesondere Anwendungsbetreuer, Anwendungsentwickler und Administratoren\nVoraussetzungen: Grundlegende Kenntnisse in einer anderen Skript- oder Programmiersprache erleichtern das Verständnis in dem Seminar\nDauer: 4 Tage\nKursgebühren: 1790.0 € (Präsenz), 1611.00 € (online)\nLink: https://seminare.ordix.de/seminare/programmiersprachen/python/python-programmierung-grundlagen.html\nTermine: - 23.06.2025 10:00 - 26.06.2025, Ort: online\n- 23.06.2025 10:00 - 26.06.2025, Ort: Wiesbaden\n- 15.09.2025 10:00 - 18.09.2025, Ort: online\n- 15.09.2025 10:00 - 18.09.2025, Ort: Wiesbaden\n- 24.11.2025 10:00 - 27.11.2025, Ort: online\n- 24.11.2025 10:00 - 27.11.2025, Ort: Wiesbaden"
-        ]
-      },
-      {
-        "id": "0914",
-        "history": [
-          {
-            "role": "assistant",
-            "content": "Hallo! Ich bin der SemiBot von der ORDIX AG und Ihr Assistent für alle Fragen rund um unsere Seminare. Wie kann ich Ihnen helfen?"
-          },
-          {
-            "role": "user",
-            "content": "Es gibt keine Anmeldefrist. Sie können sich anmelden, solange Plätze verfügbar sind."
-          },
-          {
-            "role": "assistant",
-            "content": "Das ist korrekt! Bei unseren Seminaren gibt es keine feste Anmeldefrist. Sie können sich anmelden, solange noch Plätze verfügbar sind. Wenn Sie möchten, können Sie auch einen Teilnehmerplatz unverbindlich reservieren."
-          },
-          {
-            "role": "user",
-            "content": "Genau, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, lassen Sie es mich bitte wissen!"
-          },
-          {
-            "role": "assistant",
-            "content": "Das stimmt, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, stehe ich Ihnen gerne zur Verfügung!"
-          },
-          {
-            "role": "user",
-            "content": "Das stimmt, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, stehe ich Ihnen gerne zur Verfügung!"
-          },
-          {
-            "role": "assistant",
-            "content": "Vielen Dank für die Bestätigung! Wenn Sie weitere Informationen zu einem bestimmten Seminar benötigen oder Fragen haben, lassen Sie es mich bitte wissen. Ich helfe Ihnen gerne weiter!"
-          },
-          {
-            "role": "user",
-            "content": "Wiederhole bitte meine Aussage: Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01"
-          },
-          {
-            "role": "assistant",
-            "content": "Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01."
-          }
-        ],
-        "query": "Wiederhole bitte meine Aussage: Das PM-07 Seminar kostet 1290,00 €.",
-        "reference_query": "Wiederhole bitte meine Aussage: Das PM-07 Seminar kostet 1290,00 €.",
-        "reference_contexts": [
-          "PM-07"
-        ],
-        "reference_answer": "",
-        "retrieved_contexts": [
-          "PM-07"
-        ],
-        "contextualized_query": "Das PM-07 Seminar kostet 1290,00 €.",
-        "answer": "Das PM-07 Seminar, \"Krisenmanagement in Projekten - Projektkrisen vorbeugen und meistern\", kostet 1290,00 € für die Präsenzteilnahme.",
-        "handoff": false,
-        "retrieved_contexts_full": [
-          "Seminartitel: Krisenmanagement in Projekten - Projektkrisen vorbeugen und meistern\nBuchungsnummer: PM-07\nKategorie: IT-Projektmanagement\nBeschreibung: Wenn Krisen in Projekten eintreten, ist es wichtig, gewappnet zu sein und zu wissen, wie man reagieren muss. Wir stellen die häufigsten Ursachen von Krisen vor und Sie lernen Wege und Möglichkeiten kennen, Projektkrisen zu meistern.\nInhalte: - Projekte in der Schieflage: Indikatoren und Merkmale, Krisenerkennung und Frühwarnindikatoren, Phasenverlauf und Dynamik der Krise, Krisen strukturiert bewältigen\r\n- Ausgangssituation klären: Analyse der Abweichung, Krisenauslöser identifizieren\r\n- Projektleiter als Krisenmanager\r\n- Maßnahmen zur Lösung der Krise und umfassende Handlungsplanung\r\n- Controlling und Risikomanagement zur Vermeidung von Krisen\r\n- Psychologische Seite von Krisen und Krisenmanagement\r\n- Lernen aus der Krise\r\n- Heikle Gespräche führen\nZiele: - Sie sind zukünftig besser auf unvorhergesehene Situationen vorbereitet und können die Entstehung einer tiefgreifenden Krise ggf. vereiteln oder zumindest besser bewältigen. \r\n- Sie sind für Projektkrisen gewappnet, erweitern Ihre Kompetenz und steigern Ihre eigene Sicherheit und Souveränität als Projektleiter. \r\n- Sie erkennen mögliche Krisenursachen für Ihre Projekte frühzeitig.\r\n- Sie wissen, wie ein Krisenmanagement in akuten Krisen aussieht und wie Sie sie am sinnvollsten meistern.\nZielgruppe: Projektmanager, Projektleiter und Teilprojektleiter, die ihr Projekt auch durch Krisen souverän führen und Ihr Wissen um den Bereich Krisenmanagement erweitern möchten\nVoraussetzungen: Erfahrungen in der Leitung von Projekten, Kenntnisse der wesentlichen Inhalte des Seminars \"IT-Projektmanagement praxisorientiert\" (PM-01) sind sinnvoll\nDauer: 2 Tage\nKursgebühren: 1290.0 € (Präsenz)\nLink: https://seminare.ordix.de/seminare/it-projektmanagement/krisenmanagement-in-projekten-projektkrisen-vorbeugen-und-meistern.html\nTermine: - 04.09.2025 10:00 - 05.09.2025, Ort: Wiesbaden\n- 27.11.2025 10:00 - 28.11.2025, Ort: Wiesbaden"
-        ]
-      },
-      {
-        "id": "0915",
-        "history": [
-          {
-            "role": "assistant",
-            "content": "Hallo! Ich bin der SemiBot von der ORDIX AG und Ihr Assistent für alle Fragen rund um unsere Seminare. Wie kann ich Ihnen helfen?"
-          },
-          {
-            "role": "user",
-            "content": "Es gibt keine Anmeldefrist. Sie können sich anmelden, solange Plätze verfügbar sind."
-          },
-          {
-            "role": "assistant",
-            "content": "Das ist korrekt! Bei unseren Seminaren gibt es keine feste Anmeldefrist. Sie können sich anmelden, solange noch Plätze verfügbar sind. Wenn Sie möchten, können Sie auch einen Teilnehmerplatz unverbindlich reservieren."
-          },
-          {
-            "role": "user",
-            "content": "Genau, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, lassen Sie es mich bitte wissen!"
-          },
-          {
-            "role": "assistant",
-            "content": "Das stimmt, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, stehe ich Ihnen gerne zur Verfügung!"
-          },
-          {
-            "role": "user",
-            "content": "Das stimmt, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, stehe ich Ihnen gerne zur Verfügung!"
-          },
-          {
-            "role": "assistant",
-            "content": "Vielen Dank für die Bestätigung! Wenn Sie weitere Informationen zu einem bestimmten Seminar benötigen oder Fragen haben, lassen Sie es mich bitte wissen. Ich helfe Ihnen gerne weiter!"
-          },
-          {
-            "role": "user",
-            "content": "Wiederhole bitte meine Aussage: Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01"
-          },
-          {
-            "role": "assistant",
-            "content": "Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01."
-          },
-          {
-            "role": "user",
-            "content": "Wiederhole bitte meine Aussage: Das PM-07 Seminar kostet 1290,00 €."
-          },
-          {
-            "role": "assistant",
-            "content": "Das PM-07 Seminar kostet 1290,00 €."
-          }
-        ],
-        "query": "Wiederhole bitte meine Aussage: In den Restaurants wird eine kleine Auswahl veganer Gerichte angeboten.",
-        "reference_query": "Wiederhole bitte meine Aussage: In den Restaurants wird eine kleine Auswahl veganer Gerichte angeboten.",
-        "reference_contexts": [
-          "Wird veganes Essen während des Seminars angeboten?"
-        ],
-        "reference_answer": "",
-        "retrieved_contexts": [
-          "Wird veganes Essen während des Seminars angeboten?"
-        ],
-        "contextualized_query": "In den Restaurants wird eine kleine Auswahl veganer Gerichte angeboten.",
-        "answer": "In den Restaurants wird eine kleine Auswahl veganer Gerichte angeboten.",
-        "handoff": false,
-        "retrieved_contexts_full": [
-          "Wird veganes Essen während des Seminars angeboten?\nIn den Restaurants wird eine kleine Auswahl veganer Gerichte angeboten."
-        ]
-      },
-      {
-        "id": "0916",
-        "history": [
-          {
-            "role": "assistant",
-            "content": "Hallo! Ich bin der SemiBot von der ORDIX AG und Ihr Assistent für alle Fragen rund um unsere Seminare. Wie kann ich Ihnen helfen?"
-          },
-          {
-            "role": "user",
-            "content": "Es gibt keine Anmeldefrist. Sie können sich anmelden, solange Plätze verfügbar sind."
-          },
-          {
-            "role": "assistant",
-            "content": "Das ist korrekt! Bei unseren Seminaren gibt es keine feste Anmeldefrist. Sie können sich anmelden, solange noch Plätze verfügbar sind. Wenn Sie möchten, können Sie auch einen Teilnehmerplatz unverbindlich reservieren."
-          },
-          {
-            "role": "user",
-            "content": "Genau, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, lassen Sie es mich bitte wissen!"
-          },
-          {
-            "role": "assistant",
-            "content": "Das stimmt, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, stehe ich Ihnen gerne zur Verfügung!"
-          },
-          {
-            "role": "user",
-            "content": "Das stimmt, bei den Seminaren der ORDIX AG gibt es keine feste Anmeldefrist. Sie können sich jederzeit anmelden, solange noch Plätze verfügbar sind. Wenn Sie weitere Fragen haben oder Unterstützung benötigen, stehe ich Ihnen gerne zur Verfügung!"
-          },
-          {
-            "role": "assistant",
-            "content": "Vielen Dank für die Bestätigung! Wenn Sie weitere Informationen zu einem bestimmten Seminar benötigen oder Fragen haben, lassen Sie es mich bitte wissen. Ich helfe Ihnen gerne weiter!"
-          },
-          {
-            "role": "user",
-            "content": "Wiederhole bitte meine Aussage: Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01"
-          },
-          {
-            "role": "assistant",
-            "content": "Das Python Programmierung Grundlagen Seminar hat die Buchungsnummer P-PYTH-01."
-          },
-          {
-            "role": "user",
-            "content": "Wiederhole bitte meine Aussage: Das PM-07 Seminar kostet 1290,00 €."
-          },
-          {
-            "role": "assistant",
-            "content": "Das PM-07 Seminar kostet 1290,00 €."
-          },
-          {
-            "role": "user",
-            "content": "Wiederhole bitte meine Aussage: In den Restaurants wird eine kleine Auswahl veganer Gerichte angeboten."
-          },
-          {
-            "role": "assistant",
-            "content": "In den Restaurants wird eine kleine Auswahl veganer Gerichte angeboten."
-          }
-        ],
-        "query": "Wiederhole bitte meine Aussage: Das NGiNX Seminar findet vom 02.06.2025-04.06.2025 statt.",
-        "reference_query": "Wiederhole bitte meine Aussage: Das NGiNX Seminar findet vom 02.06.2025-04.06.2025 statt.",
-        "reference_contexts": [
-          "NGINX-01"
-        ],
-        "reference_answer": "",
-        "retrieved_contexts": [
-          "NGINX-01",
-          "Kann mein Seminar abgesagt werden?"
-        ],
-        "contextualized_query": "Das NGiNX Seminar findet vom 02.06.2025-04.06.2025 statt.",
-        "answer": "Das NGiNX Seminar findet vom 02.06.2025 bis 04.06.2025 statt.",
-        "handoff": false,
-        "retrieved_contexts_full": [
-          "Seminartitel: NGiNX Web Server Administration\nBuchungsnummer: NGINX-01\nKategorie: Web und Application Server\nBeschreibung: Sie werden mit der professionellen Installation und Administration des NGiNX Web Servers vertraut gemacht. Außerdem lernen Sie, bestehende Systeme zu analysieren und zu optimieren, wobei insbesondere die Themen Sicherheit, Performance und Reverse Proxy betrachtet werden. Die praktische Umsetzbarkeit der Kursinhalte wird anhand umfangreicher Übungen und Beispiele dargestellt.\nInhalte: - Grundlagen: Das Hypertext Transfer Protocol HTTP, Herkunft und Historie des NGiNX Webservers\r\n- Kompilieren und Installieren: Installation aus dem Quellcode mit zusätzlichen Modulen\r\n- Erste Konfiguration und Inbetriebnahme\r\n- Statischer Content\r\n- Dynamischer Content\r\n- Redirects und Reverse Proxy\r\n- HTTPS und Zugriffschutz\r\n- Logging & Monitoring\r\n- Sicherheit & Performance Tuning\nZiele: - Sie können einen NGiNX Server installieren, administrieren und konfigurieren.\r\n- Sie sind in der Lage, bestehende Systeme zu analysieren und zu optimieren.\r\n- Sie können NGiNX-Server-Probleme beheben.\nZielgruppe: Systemadministratoren und Netzwerkadministratoren\nVoraussetzungen: Kenntnisse des Betriebssystems Unix (Kenntnisse eines Editors, Shell-Kenntnisse) oder mindestens Teilnahme am Seminar \"Unix/Linux Grundlagen für Einsteiger\" (BS-01).\nDauer: 3 Tage\nKursgebühren: 1341.00 € (online)\nLink: https://seminare.ordix.de/seminare/web-und-application-server/nginx-web-server-administration.html\nTermine: - 02.06.2025 10:00 - 04.06.2025, Ort: online",
-          "Kann mein Seminar abgesagt werden?\nWir behalten uns vor, die Veranstaltung wegen zu geringer Nachfrage bzw. Teilnehmerzahl (bis spätestens 6 Kalendertage vor dem geplanten Veranstaltungstermin) oder aus sonstigen wichtigen, von uns nicht zu vertretenden Gründen (z. B. plötzliche Erkrankung des Referenten, höhere Gewalt) abzusagen. Bei einer Absage werden Sie umgehend vom Seminarteam informiert."
-        ]
-      },
-      {
-        "id": "0917",
-        "history": [
-          {
-            "role": "assistant",
-            "content": "Hallo! Ich bin der SemiBot von der ORDIX AG und Ihr Assistent für alle Fragen rund um unsere Seminare. Wie kann ich Ihnen helfen?"
-          },
-          {
-            "role": "user",
             "content": "welche seminare gibt es im bereich kafka?"
           },
           {
@@ -14177,7 +14006,7 @@
         "retrieved_contexts_full": []
       },
       {
-        "id": "0918",
+        "id": "0913",
         "history": [
           {
             "role": "assistant",
@@ -14211,7 +14040,7 @@
         "retrieved_contexts_full": []
       },
       {
-        "id": "0919",
+        "id": "0914",
         "history": [
           {
             "role": "assistant",
@@ -14237,7 +14066,7 @@
         "retrieved_contexts_full": []
       },
       {
-        "id": "0920",
+        "id": "0915",
         "history": [
           {
             "role": "assistant",
@@ -14271,7 +14100,7 @@
         "retrieved_contexts_full": []
       },
       {
-        "id": "0921",
+        "id": "0916",
         "history": [
           {
             "role": "assistant",
@@ -14329,7 +14158,7 @@
         "retrieved_contexts_full": []
       },
       {
-        "id": "0922",
+        "id": "0917",
         "history": [
           {
             "role": "assistant",
@@ -14355,7 +14184,7 @@
         "retrieved_contexts_full": []
       },
       {
-        "id": "0923",
+        "id": "0918",
         "history": [
           {
             "role": "assistant",
@@ -14437,7 +14266,7 @@
         "retrieved_contexts_full": []
       },
       {
-        "id": "0924",
+        "id": "0919",
         "history": [
           {
             "role": "assistant",
