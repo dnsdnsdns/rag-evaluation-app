@@ -15,10 +15,10 @@ load_dotenv()
 # ... (Keep other constants: DATA_FILE, VALIDATION_FILE_A/B, MODE, TARGET_VOTES, SAMPLES_PER_ROUND, PAIRWISE_METRICS) ...
 DATA_FILE = "data/ratings_data.json"
 VALIDATION_FILE_A = "data/validationset.json"
-VALIDATION_FILE_B = "data/validationset.json"
+VALIDATION_FILE_B = "data/validationset-b.json"
 MODE = "supabase"
 TARGET_VOTES = 3
-SAMPLES_PER_ROUND = 3
+SAMPLES_PER_ROUND = 15
 PAIRWISE_METRICS = {"quality_pairwise", "multiturn_quality_pairwise"}
 # read environment variable and set default to production
 APP_ENV = os.environ.get("APP_ENV", "production").lower()
@@ -1123,7 +1123,7 @@ def main():
 
         ### 📝 Ablauf der Bewertung
 
-        Sie bewerten **ein bestimmtes Kriterium** anhand von **10 Beispielen**.
+        Sie bewerten **ein bestimmtes Kriterium** anhand von **15 Beispielen**.
                     
         Diese Beispiele sind unterschiedlich umfangreich und stammen teils aus realen Anfragen, teils sind sie zu Testzwecken erstellt. Einige Beispiele enthalten möglicherweise **Datumsangaben aus der Vergangenheit**. Dies liegt daran, dass die Testdaten zu einem früheren Zeitpunkt erstellt wurden und soll **keine Auswirkung auf Ihre Bewertung** haben. 
                     
