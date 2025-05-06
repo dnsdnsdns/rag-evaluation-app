@@ -540,6 +540,11 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
     # (Keep the sorting/shuffling logic)
     if not entities_with_votes:
         return []
+    
+    entities_with_votes = [
+        (entity, count) for (entity, count) in entities_with_votes
+        if count < TARGET_VOTES
+    ]
 
     zero_votes = []
     under_target = []
@@ -552,6 +557,12 @@ def get_samples_for_metric(metric, validation_data_a, validation_data_b, ratings
             under_target.append((entity, effective_count))
         else: # effective_count >= TARGET_VOTES
             at_or_over_target.append((entity, effective_count))
+
+    # log entities_with_votes
+    st.toast(f"Entities with votes: {entities_with_votes}") # DEBUG
+    st.toast(f"Zero votes: {zero_votes}") # DEBUG
+    st.toast(f"Under target: {under_target}") # DEBUG
+    st.toast(f"At or over target: {at_or_over_target}") # DEBUG
 
     under_target.sort(key=lambda x: x[1])
     random.shuffle(zero_votes)
