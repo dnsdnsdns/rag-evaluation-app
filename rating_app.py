@@ -10,6 +10,11 @@ from collections import defaultdict, Counter # Added Counter
 from dotenv import load_dotenv
 from prompt_templates import evaluation_templates
 
+# import psutil
+# process = psutil.Process(os.getpid())
+# mem_usage_mb = process.memory_info().rss / 1024**2  # RSS = Resident Set Size
+# st.sidebar.text(f"App memory: {mem_usage_mb:.2f} MB")
+
 load_dotenv() 
 
 # ... (Keep other constants: DATA_FILE, VALIDATION_FILE_A/B, MODE, TARGET_VOTES, SAMPLES_PER_ROUND, PAIRWISE_METRICS) ...
@@ -22,6 +27,7 @@ SAMPLES_PER_ROUND = 15
 PAIRWISE_METRICS = {"quality_pairwise", "multiturn_quality_pairwise"}
 # read environment variable and set default to production
 APP_ENV = os.environ.get("APP_ENV", "production").lower()
+APP_ENV = "prod"
 SUPABASE_TABLE_NAME = "ratings_dev" if APP_ENV == "development" else "ratings"
 
 @st.cache_data # Cache the result of this function
@@ -228,15 +234,38 @@ def load_ratings(supabase_client): # Pass the client
         if not supabase_client:
              st.error("Supabase client not available for loading ratings.")
              return ratings # Return empty if client failed
+        
+        all_data = []
+        current_page = 0
+        page_size = 1000
+        
         try:
-            # ... (rest of Supabase load logic using supabase_client) ...
-            response = supabase_client.schema("api").table(SUPABASE_TABLE_NAME).select("*").execute()
-            # ... (processing logic) ...
-            data = response.data
+            while True:
+                range_from = current_page * page_size
+                range_to = range_from + page_size - 1
+                
+                # Fetch the current page of data
+                response = supabase_client.schema("api").table(SUPABASE_TABLE_NAME).select("*").range(range_from, range_to).execute()
+                
+                if hasattr(response, 'error') and response.error:
+                    raise Exception(f"Supabase error: {response.error}")
+                
+                current_page_data = response.data
+                if not current_page_data: # No more data returned
+                    break
+                
+                all_data.extend(current_page_data)
+                
+                # If the number of items fetched is less than the page size,
+                # it means we've reached the last page.
+                if len(current_page_data) < page_size:
+                    break
+                current_page += 1
+            # st.session_state.debug_log.append(f"LOAD_RATINGS: Fetched a total of {len(all_data)} rows from Supabase table {SUPABASE_TABLE_NAME} (using pagination).")
 
-            for row in data:
+            for row in all_data:
                 rater_type = row["rater_type"]
-                sample_id = row["sample_id"] # This ID represents the sample or sample pair
+                sample_id = row["sample_id"]
                 metric = row["metric"]
                 vote = row["vote"]
                 swap_positions = row.get("swap_positions")
@@ -1061,6 +1090,7 @@ st.session_state.setdefault("it_background", None)
 st.session_state.setdefault("round_count", 0)
 st.session_state.setdefault("swap_options", False)
 st.session_state.setdefault("is_pairwise", False)
+# st.session_state.setdefault("debug_log", [])
 
 # Initialize Supabase client or load local ratings
 supabase_client = None
@@ -1109,6 +1139,10 @@ def update_standard_rating(radio_widget_key):
 # --- Main Function ---
 def main():
     st.title("Bewertung von Chatbot-Antworten")
+
+    # Display last N messages, newest first for easier reading
+    # for msg in reversed(st.session_state.debug_log[-20:]):
+    #     st.sidebar.text(msg)
 
     # --- Initial User Setup ---
     if not st.session_state.app_started:
