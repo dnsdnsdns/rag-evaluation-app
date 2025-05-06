@@ -941,13 +941,14 @@ def start_new_round():
     validation_data_a = validation_sets['a']
     validation_data_b = validation_sets['b']
 
-    # Add a check for ratings structure before passing
-    if not isinstance(st.session_state.get("ratings"), dict):
-        st.error("Ratings data is corrupted or not initialized. Reloading.")
-        st.session_state.ratings = load_ratings(supabase_client if MODE == "supabase" else None)
-        # Add another check after reload
+    # In Supabase mode, always reload ratings at the start of a new round
+    if MODE == "supabase":
+        st.session_state.ratings = load_ratings(supabase_client)
+    elif not isinstance(st.session_state.get("ratings"), dict):
+        st.error("Local ratings data is corrupted or not initialized. Reloading.")
+        st.session_state.ratings = load_ratings(None)
         if not isinstance(st.session_state.get("ratings"), dict):
-             st.error("Failed to load valid ratings data. Cannot proceed.")
+             st.error("Failed to load valid local ratings data. Cannot proceed.")
              st.stop()
 
 
